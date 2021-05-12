@@ -78,6 +78,7 @@ model_params['eval_freq'] = 4
 model_params['max_non_dec'] = 10
 model_params['verbose'] = VERB
 
+p_n = 0.025
 
 if __name__ == '__main__':
 
@@ -87,7 +88,7 @@ if __name__ == '__main__':
     data = datasets.DenoisingSparse(G,
                                     signals['N_samples'],
                                     signals['L_filter'], signals['g_params']['k'],  # k is n_delts
-                                    0.025,
+                                    p_n,
                                     median=signals['median'])
     #data.to_unit_norm()
     data.to_tensor()

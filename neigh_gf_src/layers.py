@@ -25,9 +25,12 @@ class GraphFilter(nn.Module):
 
         self.Spow = torch.zeros(K, self.N, self.N)
         self.Spow[0, :, :] = torch.eye(self.N)
+        # mat_power = np.eye(self.N)
         self.distances = shortest_path(self.S, directed=False, unweighted=True)
-        for i in range(1, K):
-            self.Spow[i, :, :] = torch.from_numpy((self.distances == i).astype(int))
+        for k in range(1, K):
+            self.Spow[k, :, :] = torch.from_numpy((self.distances == k).astype(int))
+            # mat_power = mat_power @ self.S
+            # self.Spow[k, :, :] = torch.from_numpy(((self.Spow[i-1]@self.S) > 0).astype(int))
         self.Spow = self.Spow.repeat(max(self.Fout, self.Fin), 1, 1, 1)
 
     def calc_filter(self, fout):
@@ -202,9 +205,12 @@ class GraphFilterFC(nn.Module):
         #Calculate powers of S
         self.Spow = torch.zeros((self.K, self.N, self.N))
         self.Spow[0,:,:] = torch.eye(self.N)
+        # mat_power = np.eye(self.N)
         self.distances = shortest_path(self.S, directed=False, unweighted=True)
         for k in range(1, K):
             self.Spow[k, :, :] = torch.from_numpy((self.distances == k).astype(int))
+            # mat_power = mat_power @ self.S
+            # self.Spow[k, :, :] = torch.from_numpy((mat_power > 0).astype(int))
         #torch.set_printoptions(threshold=100)
 
     def forward(self, x):
