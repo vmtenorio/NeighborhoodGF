@@ -86,7 +86,8 @@ if __name__ == '__main__':
     # Define the data model
     data = datasets.SourcelocSynthetic(G,
                                         signals['N_samples'],
-                                        signals['L_filter'],
+                                        #signals['L_filter'],
+                                        min_l=10, max_l=25,
                                         median=signals['median'])
     #data.to_unit_norm()
     data.to_tensor()
