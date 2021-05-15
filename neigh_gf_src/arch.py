@@ -6,6 +6,7 @@ from . import layers
 class GCNN(nn.Module):
     def __init__(self,
                 S,
+                gf_type,    # Type of graph filter to use
                 F,          # Features in each graph filter layer (list)
                 K,          # Filter taps in each graph filter layer
                 M,          # Neurons in each fully connected layer (list)
@@ -28,13 +29,15 @@ class GCNN(nn.Module):
         self.nonlin = nonlin
         self.l_param = []
 
+        self.gf = getattr(layers, gf_type)
+
         # Define the layer
         # Grahp Filter Layers
         gfl = []
         for l in range(len(self.F)-1):
             # print("Graph filter layer: " + str(l))
             # print(str(self.F[l]) + ' x ' + str(self.F[l+1]))
-            gfl.append(layers.GraphFilterFC(self.S, self.F[l], self.F[l+1], self.K))
+            gfl.append(self.gf(self.S, self.F[l], self.F[l+1], self.K))
             gfl.append(self.nonlin())
             self.l_param.append('weights_gf_' + str(l))
             self.l_param.append('bias_gf_' + str(l))

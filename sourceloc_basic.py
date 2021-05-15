@@ -50,6 +50,7 @@ signals['g_params'] = G_params
 
 # NN Parameters
 nn_params = {}
+nn_params['gf_type'] = "NeighborhoodGF"
 nn_params['F'] = [1, 2, 4, 8]
 nn_params['K'] = 3
 nn_params['M'] = [128, 64, 32, k]
