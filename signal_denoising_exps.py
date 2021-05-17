@@ -1,6 +1,9 @@
 import time
 import torch.nn as nn
 import numpy as np
+import os
+import json
+import torch
 import sys
 sys.path.append('..')
 
@@ -14,11 +17,13 @@ from neigh_gf_src.arch import GCNN
 # Parameters
 
 VERB = True
-ARCH_INFO = True
+ARCH_INFO = False
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 signals = {}
 signals['N_samples'] = 2000
-signals['N_graphs'] = 20
+signals['N_graphs'] = 10
 signals['L_filter'] = 6
 signals['noise'] = 0
 signals['test_only'] = False
@@ -44,7 +49,11 @@ G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
-G_params['q'] = 10*G_params['q'] # For the smaller graph
+# For the smaller graph
+G_params['q'] = [[0, 0.075, 0, 0.0],
+                 [0.075, 0, 0.04, 0.025],
+                 [0, 0.04, 0, 0.05],
+                 [0, 0.025, 0.05, 0]]
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -68,16 +77,18 @@ EXPS = [
         'K': 3,
         'M': [128, 256, N],
         'nonlin': nn.Tanh,
+        'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "NeighborhoodGF-Binarization"
+        "name": "NeighborhoodGF-Binarization",
         "gf_type": "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
         'M': [128, 256, N],
         'nonlin': nn.Tanh,
+        'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
         'arch_info': ARCH_INFO
     },
@@ -88,6 +99,7 @@ EXPS = [
         'K': 3,
         'M': [128, 256, N],
         'nonlin': nn.Tanh,
+        'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
         'arch_info': ARCH_INFO
     }
@@ -95,7 +107,7 @@ EXPS = [
 
 p_n_list = [0, .025, .05, 0.075, .1]
 
-def test_arch(signals, nn_params, model_params, p_n):
+def test_arch(signals, nn_params, model_params, p_n, device):
 
     mse = np.zeros(signals['N_graphs'])
     mean_err = np.zeros(signals['N_graphs'])
@@ -117,6 +129,7 @@ def test_arch(signals, nn_params, model_params, p_n):
                                         median=signals['median'])
         #data.to_unit_norm()
         data.to_tensor()
+        data.to(device)
 
         G.compute_laplacian('normalized')
         archit = GCNN(G.L.todense(),
@@ -127,6 +140,8 @@ def test_arch(signals, nn_params, model_params, p_n):
                       nn_params['nonlin'],
                       ARCH_INFO
                     )
+
+        archit.to(device)
 
         model_params['arch'] = archit
 
@@ -141,17 +156,21 @@ def test_arch(signals, nn_params, model_params, p_n):
         ), flush=True)
 
     results = {
+            "n_params": model.count_params(),
+            "train_time": np.mean(t_train),
             "mse": np.mean(mse),
             "mean_err": np.mean(mean_err),
-            "median_err": np.median(median_err),
+            "median_err": np.median(med_err),
             "epochs": np.mean(epochs),
-            "train_err": np.mean(train_err, axis=1).tolist(),
-            "val_error": np.mean(val_err, axis=1).tolist()
+            "train_err": np.mean(train_err, axis=0).tolist(),
+            "val_error": np.mean(val_err, axis=0).tolist()
         }
     return results
 
 def save_results(path, results):
-    with open(path, 'w') as f:
+    if not os.path.exists('results'):
+        os.mkdir('results')
+    with open('results/' + path, 'w') as f:
         json.dump(results, f)
 
 if __name__ == '__main__':
@@ -162,11 +181,14 @@ if __name__ == '__main__':
         print("***************************")
         print("Starting " + exp['name'])
         results[exp['name']] = exp.copy()
+        del results[exp['name']]['nonlin'] # Not possible to be saved in json format
         results_exp = {}
         for p_n in p_n_list:
-            results_exp[p_n] = test_arch(signals, exp, model_params, p_n 
+            print("***************************")
+            print("Starting with p_n: ", str(p_n))
+            results_exp[p_n] = test_arch(signals, exp, model_params, p_n, device)
 
         results[exp['name']]["results"] = results_exp
 
-    save_results("results/" + time.strftime("%Y%m%d-%H%M") + ".json", results)
+    save_results(time.strftime("%Y%m%d-%H%M") + ".json", results)
 

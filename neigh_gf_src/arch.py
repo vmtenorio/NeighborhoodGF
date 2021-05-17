@@ -27,7 +27,6 @@ class GCNN(nn.Module):
         self.K = K
         self.M = M
         self.nonlin = nonlin
-        self.l_param = []
 
         self.gf = getattr(layers, gf_type)
 
@@ -39,8 +38,6 @@ class GCNN(nn.Module):
             # print(str(self.F[l]) + ' x ' + str(self.F[l+1]))
             gfl.append(self.gf(self.S, self.F[l], self.F[l+1], self.K))
             gfl.append(self.nonlin())
-            self.l_param.append('weights_gf_' + str(l))
-            self.l_param.append('bias_gf_' + str(l))
 
         self.GFL = nn.Sequential(*gfl)
 
@@ -51,15 +48,11 @@ class GCNN(nn.Module):
             # As last layer has no nonlin (if its softmax is done later, etc.)
             # define here the first layer before loop
             fcl.append(nn.Linear(firstLayerIn, self.M[0]))
-            self.l_param.append('weights_fc_0')
-            self.l_param.append('bias_fc_0')
             for m in range(1,len(self.M)):
                 # print("FC layer: " + str(m))
                 # print(str(self.M[m-1]) + ' x ' + str(self.M[m]))
                 fcl.append(self.nonlin())
                 fcl.append(nn.Linear(self.M[m-1], self.M[m]))
-                self.l_param.append('weights_fc_' + str(m))
-                self.l_param.append('bias_fc_' + str(m))
 
         self.FCL = nn.Sequential(*fcl)
 
@@ -71,9 +64,9 @@ class GCNN(nn.Module):
 
     def forward(self, x):
 
-        #Check type
-        if type(x) != torch.FloatTensor:
-            x = torch.FloatTensor(x)
+        # Check type
+        # if type(x) != torch.FloatTensor:
+        #     x = torch.FloatTensor(x)
 
         # Params
         T = x.shape[0]

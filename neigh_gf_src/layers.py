@@ -113,7 +113,7 @@ class BaseGF(nn.Module):
                 # Size of the filter
                 Fin, Fout, K
                 ):
-        super(GraphFilterFC, self).__init__()
+        super(BaseGF, self).__init__()
         self.S = S
         self.N = S.shape[0]
         self.Fin = Fin
@@ -127,7 +127,7 @@ class BaseGF(nn.Module):
         # self.bias = nn.parameter.Parameter(torch.Tensor(1, self.N, self.Fout))
         # self.bias.data.uniform_(-stdv, stdv)
 
-        self.build_graph()
+        self.build_filter()
         #torch.set_printoptions(threshold=100)
 
     def forward(self, x):
@@ -171,8 +171,9 @@ class NeighborhoodGF(BaseGF):
         self.Spow = torch.zeros((self.K, self.N, self.N))
         self.Spow[0,:,:] = torch.eye(self.N)
         self.distances = shortest_path(self.S, directed=False, unweighted=True)
-        for k in range(1, K):
+        for k in range(1, self.K):
             self.Spow[k, :, :] = torch.from_numpy((self.distances == k).astype(int))
+        self.Spow = nn.Parameter(self.Spow, requires_grad=False)
 
 
 class NeighborhoodGFType2(BaseGF):
@@ -181,9 +182,10 @@ class NeighborhoodGFType2(BaseGF):
         self.Spow = torch.zeros((self.K, self.N, self.N))
         self.Spow[0,:,:] = torch.eye(self.N)
         mat_power = np.eye(self.N)
-        for k in range(1, K):
+        for k in range(1, self.K):
             mat_power = mat_power @ self.S
             self.Spow[k, :, :] = torch.from_numpy((mat_power > 0).astype(int))
+        self.Spow = nn.Parameter(self.Spow, requires_grad=False)
 
 
 class ClassicGF(BaseGF):
@@ -192,8 +194,9 @@ class ClassicGF(BaseGF):
         self.Spow = torch.zeros((self.K, self.N, self.N))
         self.Spow[0,:,:] = torch.eye(self.N)
 
-        for k in range(1, K):
-            self.Spow[k, :, :] = torch.from_numpy(self.Spow[k-1,:,:] @ self.S)
+        for k in range(1, self.K):
+            self.Spow[k, :, :] = self.Spow[k-1,:,:] @ self.S
+        self.Spow = nn.Parameter(self.Spow, requires_grad=False)
 
 
 class BasicGNN(nn.Module):

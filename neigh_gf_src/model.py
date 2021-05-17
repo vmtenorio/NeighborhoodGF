@@ -60,14 +60,14 @@ class Model:
                 self.optim.step()
 
             self.scheduler.step()
-            train_err[i-1] = training_loss.detach().numpy()
+            train_err[i-1] = training_loss.detach().item()
             t = time.time()-t_start
 
             # Predict eval error
             with no_grad():
                 predicted_Y_eval = self.arch(val_X)
                 eval_loss = self.loss(predicted_Y_eval, val_Y)
-                val_err[i-1] = eval_loss.detach().numpy()
+                val_err[i-1] = eval_loss.detach().item()
             if eval_loss.data*1.005 < best_err:
                 best_err = eval_loss.data
                 best_net = copy.deepcopy(self.arch)
@@ -106,13 +106,13 @@ class Model:
         node_loss = self.loss(Y_hat, test_Y)
 
         # Normalize error for the whole signal
-        Y_hat = Y_hat.detach().numpy()
-        Y = test_Y.detach().numpy()
+        Y_hat = Y_hat.detach().to('cpu').numpy()
+        Y = test_Y.detach().to('cpu').numpy()
         if regression:
             err = np.sum((Y_hat-Y)**2, axis=1)/np.linalg.norm(Y, axis=1)**2
             mean_norm_error = np.mean(err)
             median_norm_error = np.median(err)
-            return mean_norm_error, median_norm_error, node_loss.detach().numpy()
+            return mean_norm_error, median_norm_error, node_loss.detach().to('cpu').numpy()
         else:
             Y_hat_class = np.argmax(Y_hat, axis=1)
             acc = (Y_hat_class == Y).sum() / Y.shape[0]
