@@ -251,6 +251,14 @@ class DiffusedSparse:
             self.val_X = self.median_neighbours_nodes(self.val_X, self.G)
             self.test_X = self.median_neighbours_nodes(self.test_X, self.G)
 
+    def to(self, device):
+        self.train_X = self.train_X.to(device)
+        self.train_Y = self.train_Y.to(device)
+        self.val_X = self.val_X.to(device)
+        self.val_Y = self.val_Y.to(device)
+        self.test_X = self.test_X.to(device)
+        self.test_Y = self.test_Y.to(device)
+
 class DenoisingSparse(DiffusedSparse):
     '''
     Class for the Denoising problem, where we try to recover the original signal
@@ -266,17 +274,35 @@ class DenoisingSparse(DiffusedSparse):
             self.h = 2 * np.random.rand(L) - 1
         else:
             self.h = np.random.rand(L)
-        self.random_diffusing_filter()
-        self.create_samples_S(n_delts, min_d, max_d)
-        self.create_samples_X()
+
+        self.train_X, self.train_Y = self.create_samples(self.n_train, n_delts, min_d, max_d)
+        self.val_X, self.val_Y = self.create_samples(self.n_val, n_delts, min_d, max_d)
+        self.test_X, self.test_Y = self.create_samples(self.n_test, n_delts, min_d, max_d)
+
+        self.add_noise_to_X(self.train_Y, p_n)
 
         self.to_unit_norm()
 
-        self.train_Y = self.train_X.copy()
-        self.val_Y = self.val_X.copy()
-        self.test_Y = self.test_X.copy()
-        self.add_noise(p_n, test_only=test_only)
+    def create_samples(self, n_samples, n_delts, min_d, max_d):
+        deltas = self.delta_values(self.G, n_samples, n_delts, min_d, max_d)
+        delta_S = self.sparse_S(self.G, deltas)
+        self.random_diffusing_filter()
 
+        Y = self.H.dot(delta_S.T).T
+        if self.median:
+            Y = self.median_neighbours_nodes(Y, self.G)
+
+        X = np.random.randn(n_samples, self.G.N)
+
+        return X, Y
+
+    def to_unit_norm(self):
+        self.train_X = self._to_unit_norm(self.train_X)
+        self.train_Y = self._to_unit_norm(self.train_Y)
+        self.val_X = self._to_unit_norm(self.val_X)
+        self.val_Y = self._to_unit_norm(self.val_Y)
+        self.test_X = self._to_unit_norm(self.test_X)
+        self.test_Y = self._to_unit_norm(self.test_Y)
 
 class SourcelocSynthetic(DiffusedSparse):
     """

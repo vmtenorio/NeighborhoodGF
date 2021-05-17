@@ -1,4 +1,3 @@
-import os
 import time
 import torch.nn as nn
 import numpy as np
@@ -45,11 +44,13 @@ G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
+G_params['q'] = 10*G_params['q'] # For the smaller graph
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
 # NN Parameters
 nn_params = {}
+nn_params['gf_type'] = "NeighborhoodGF"
 nn_params['F'] = [1, 2, 4, 8]
 nn_params['K'] = 3
 nn_params['M'] = [128, 64, 32, k]
@@ -93,7 +94,7 @@ if __name__ == '__main__':
     data.to_tensor()
 
     G.compute_laplacian('normalized')
-    archit = GCNN(G.L.todense(), nn_params['F'], nn_params['K'], nn_params['M'], nn_params['nonlin'], ARCH_INFO)
+    archit = GCNN(G.L.todense(), nn_params['gf_type'], nn_params['F'], nn_params['K'], nn_params['M'], nn_params['nonlin'], ARCH_INFO)
 
     model_params['arch'] = archit
 
