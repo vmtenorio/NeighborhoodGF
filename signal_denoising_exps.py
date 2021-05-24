@@ -12,8 +12,6 @@ from neigh_gf_src.model import Model, ADAM
 from neigh_gf_src import datasets
 from neigh_gf_src.arch import GCNN
 
-# TODO: Optimize for GPU
-
 # Parameters
 
 VERB = True

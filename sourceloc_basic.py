@@ -9,8 +9,6 @@ from neigh_gf_src.model import Model, ADAM
 from neigh_gf_src import datasets
 from neigh_gf_src.arch import GCNN
 
-# TODO: Optimize for GPU
-
 # Parameters
 
 VERB = True
@@ -44,14 +42,17 @@ G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
-G_params['q'] = 10*G_params['q'] # For the smaller graph
+G_params['q'] = [[0, 0.075, 0, 0.0],
+                 [0.075, 0, 0.04, 0.025],
+                 [0, 0.04, 0, 0.05],
+                 [0, 0.025, 0.05, 0]]
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
 # NN Parameters
 nn_params = {}
 nn_params['gf_type'] = "NeighborhoodGF"
-nn_params['F'] = [1, 2, 4, 8]
+nn_params['F'] = [1, 2, 4, 8, 16, 16]
 nn_params['K'] = 3
 nn_params['M'] = [128, 64, 32, k]
 nonlin_s = "tanh"
