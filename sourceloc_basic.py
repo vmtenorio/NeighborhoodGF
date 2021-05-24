@@ -95,7 +95,14 @@ if __name__ == '__main__':
     data.to_tensor()
 
     G.compute_laplacian('normalized')
-    archit = GCNN(G.L.todense(), nn_params['gf_type'], nn_params['F'], nn_params['K'], nn_params['M'], nn_params['nonlin'], ARCH_INFO)
+    archit = GCNN(G.W.todense(),
+                    nn_params['gf_type'],
+                    nn_params['F'],
+                    nn_params['K'],
+                    nn_params['M'],
+                    nn_params['nonlin'],
+                    ARCH_INFO
+                )
 
     model_params['arch'] = archit
 

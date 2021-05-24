@@ -407,5 +407,3 @@ class SourcelocSynthetic(BaseGraphDataset):
 
         return X, Y
 
-
-
