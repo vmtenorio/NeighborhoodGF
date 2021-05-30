@@ -16,7 +16,7 @@ ARCH_INFO = True
 
 signals = {}
 signals['N_samples'] = 2000
-signals['N_graphs'] = 20
+signals['N_graphs'] = 25
 signals['L_filter'] = 4
 signals['noise'] = 0
 signals['test_only'] = False
@@ -42,10 +42,6 @@ G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
-G_params['q'] = [[0, 0.075, 0, 0.0],
-                 [0.075, 0, 0.04, 0.025],
-                 [0, 0.04, 0, 0.05],
-                 [0, 0.025, 0.05, 0]]
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -77,7 +73,7 @@ model_params['loss_func'] = nn.CrossEntropyLoss()
 model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
-model_params['max_non_dec'] = 10
+model_params['max_non_dec'] = 20
 model_params['verbose'] = VERB
 
 

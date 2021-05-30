@@ -21,8 +21,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 signals = {}
 signals['N_samples'] = 2000
-signals['N_graphs'] = 10
-signals['L_filter'] = 10
+signals['N_graphs'] = 25
+signals['min_l'] = 10
+signals['max_l'] = 25
 signals['noise'] = 0
 signals['test_only'] = False
 
@@ -40,18 +41,13 @@ signals['median'] = True
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 128
+G_params['N'] = N = 256
 G_params['k'] = k = 4
 G_params['p'] = 0.3
 G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
-# For the smaller graph
-G_params['q'] = [[0, 0.075, 0, 0.0],
-                 [0.075, 0, 0.04, 0.025],
-                 [0, 0.04, 0, 0.05],
-                 [0, 0.025, 0.05, 0]]
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -64,16 +60,16 @@ model_params['loss_func'] = nn.CrossEntropyLoss()
 model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
-model_params['max_non_dec'] = 10
+model_params['max_non_dec'] = 15
 model_params['verbose'] = VERB
 
 EXPS = [
     {
         "name": "NeighborhoodGF",
         "gf_type": "NeighborhoodGF",
-        'F': [1, 2, 4, 8, 4, 2, 1],
+        'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
-        'M': [128, 256, k],
+        'M': [128, 64, 32, k],
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
@@ -82,9 +78,9 @@ EXPS = [
     {
         "name": "NeighborhoodGF-Binarization",
         "gf_type": "NeighborhoodGFType2",
-        'F': [1, 2, 4, 8, 4, 2, 1],
+        'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
-        'M': [128, 256, k],
+        'M': [128, 64, 32, k],
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
@@ -93,9 +89,9 @@ EXPS = [
     {
         "name": "ClassicGF",
         "gf_type": "ClassicGF",
-        'F': [1, 2, 4, 8, 4, 2, 1],
+        'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
-        'M': [128, 256, k],
+        'M': [128, 64, 32, k],
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
@@ -121,7 +117,8 @@ def test_arch(signals, nn_params, model_params, p_n, device):
         # Define the data model
         data = datasets.SourcelocSynthetic(G,
                                             signals['N_samples'],
-                                            min_l=10, max_l=25,
+                                            min_l=signals['min_l'],
+                                            max_l=signals['max_l'],
                                             median=signals['median'])
         #data.to_unit_norm()
         data.add_noise(p_n, test_only=True)
@@ -129,7 +126,7 @@ def test_arch(signals, nn_params, model_params, p_n, device):
         data.to(device)
 
         G.compute_laplacian('normalized')
-        archit = GCNN(G.L.todense(),
+        archit = GCNN(G.W.todense(),
                       nn_params['gf_type'],
                       nn_params['F'],
                       nn_params['K'],
@@ -149,19 +146,23 @@ def test_arch(signals, nn_params, model_params, p_n, device):
         loss[i], acc[i] = model.test(data.test_X, data.test_Y, regression=False)
 
         print("DONE {}: CELoss={} - Accuracy={} - Params={} - t_conv={} - epochs={}".format(
-            i, loss[i], 100*acc[i], model.count_params(), round(t_train[i], 4), epochs[i]
+            i+1, loss[i], 100*acc[i], model.count_params(), round(t_train[i], 4), epochs[i]
         ), flush=True)
 
     results = {
             "n_params": model.count_params(),
             "train_time": np.mean(t_train),
-            "mse": np.mean(mse),
-            "mean_err": np.mean(mean_err),
-            "median_err": np.median(med_err),
+            "loss": np.mean(loss),
+            "loss_std": np.std(loss),
+            "loss_full": loss.tolist(),
+            "acc": np.mean(acc),
+            "acc_std": np.std(acc),
+            "acc_full": acc.tolist(),
             "epochs": np.mean(epochs),
             "train_err": np.mean(train_err, axis=0).tolist(),
             "val_error": np.mean(val_err, axis=0).tolist()
         }
+
     return results
 
 def save_results(path, results):
