@@ -44,7 +44,6 @@ G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
-G_params['q'] = 10*G_params['q'] # For the smaller graph
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 

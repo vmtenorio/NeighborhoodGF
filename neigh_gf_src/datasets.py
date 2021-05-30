@@ -238,9 +238,16 @@ class DenoisingSparse(BaseGraphDataset):
         self.max_d = max_d
         self.neg_coeffs = neg_coeffs
 
+        assert self.n_train > self.n_val and self.n_train > self.n_test, \
+                "Need more training samples than validation and test"
+
         self.train_X, self.train_Y = self.create_samples(self.n_train)
-        self.val_X, self.val_Y = self.create_samples(self.n_val)
-        self.test_X, self.test_Y = self.create_samples(self.n_test)
+        idxs = np.random.permutation(self.n_train)
+        val_idx = idx[:self.n_val]
+        test_idx = idx[-self.n_test:]
+
+        self.val_X, self.val_Y = self.train_X[val_idx].copy(), self.train_Y[val_idx].copy()
+        self.test_X, self.test_Y = self.train_X[test_idx].copy(), self.train_Y[test_idx].copy()
 
         self.add_noise_to_X(self.train_Y, p_n)
 
