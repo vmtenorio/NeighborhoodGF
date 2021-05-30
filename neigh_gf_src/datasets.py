@@ -324,6 +324,16 @@ class SourcelocSynthetic(BaseGraphDataset):
 
         super(SourcelocSynthetic, self).__init__(G, n_samples, median)
 
+        self.N = self.G.W.shape[0]
+
+        S = norm_graph(self.G.W.todense())
+        self.Spow = np.zeros((max_l,self.N,self.N))
+        self.Spow[0,:,: = np.eye(self.N)
+        # Calc powers of S
+        for l in range(max_l):
+            self.Spow[l,:,:] = self.Spow[l-1,:,:] @ S
+
+
         self.train_X, self.train_Y = self.create_samples(self.n_train,
                                                     min_d, max_d,
                                                     min_l, max_l)
@@ -377,20 +387,13 @@ class SourcelocSynthetic(BaseGraphDataset):
             - L: number of filter coeffcients
         """
         h = np.random.randn(max_l, n_samples)
-        N = self.G.W.shape[0]
-        H = np.zeros((n_samples, max_l, N, N))
-
-        S = norm_graph(self.G.W.todense())
-        Spow = np.zeros((max_l,N,N))
-        # Calc powers of S
-        for l in range(max_l):
-            Spow[l,:,:] = np.linalg.matrix_power(S, l)
+        H = np.zeros((n_samples, max_l, self.N, self.N))
 
         for i in range(n_samples):
             n_coefs = np.random.randint(min_l, max_l)
             coefs = h[:n_coefs,i]
 
-            H[i,:n_coefs,:,:] = coefs[:,None,None]*Spow[:n_coefs,:,:]
+            H[i,:n_coefs,:,:] = coefs[:,None,None]*self.Spow[:n_coefs,:,:]
 
         H = np.sum(H, axis=1)
         return H
