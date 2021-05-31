@@ -243,8 +243,8 @@ class DenoisingSparse(BaseGraphDataset):
 
         self.train_X, self.train_Y = self.create_samples(self.n_train)
         idxs = np.random.permutation(self.n_train)
-        val_idx = idx[:self.n_val]
-        test_idx = idx[-self.n_test:]
+        val_idx = idxs[:self.n_val]
+        test_idx = idxs[-self.n_test:]
 
         self.val_X, self.val_Y = self.train_X[val_idx].copy(), self.train_Y[val_idx].copy()
         self.test_X, self.test_Y = self.train_X[test_idx].copy(), self.train_Y[test_idx].copy()
@@ -335,9 +335,9 @@ class SourcelocSynthetic(BaseGraphDataset):
 
         S = norm_graph(self.G.W.todense())
         self.Spow = np.zeros((max_l,self.N,self.N))
-        self.Spow[0,:,: = np.eye(self.N)
+        self.Spow[0,:,:] = np.eye(self.N)
         # Calc powers of S
-        for l in range(max_l):
+        for l in range(1, max_l):
             self.Spow[l,:,:] = self.Spow[l-1,:,:] @ S
 
 
