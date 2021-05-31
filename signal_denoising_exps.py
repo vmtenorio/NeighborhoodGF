@@ -26,21 +26,12 @@ signals['L_filter'] = 6
 signals['noise'] = 0
 signals['test_only'] = False
 
-signals['perm'] = True
-signals['pct'] = True
-if signals['pct']:
-    signals['eps1'] = 10
-    signals['eps2'] = 10
-else:
-    signals['eps1'] = 0.1
-    signals['eps2'] = 0.3
-
 signals['median'] = True
 
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 128
+G_params['N'] = N = 256
 G_params['k'] = k = 4
 G_params['p'] = 0.3
 G_params['q'] = [[0, 0.0075, 0, 0.0],
@@ -60,43 +51,41 @@ model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
 model_params['max_non_dec'] = 10
+model_params['es_loss_type'] = "train"
 model_params['verbose'] = VERB
 
 EXPS = [
     {
-        "name": "NeighborhoodGF",
-        "gf_type": "NeighborhoodGF",
+        'name': "NeighborhoodGF",
+        'gf_type': "NeighborhoodGF",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
-        'M': [128, 256, N],
-        'bias_mlp': True,
+        'M': [],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "NeighborhoodGF-Binarization",
-        "gf_type": "NeighborhoodGFType2",
+        'name': "NeighborhoodGF-Binarization",
+        'gf_type': "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
-        'M': [128, 256, N],
-        'bias_mlp': True,
+        'M': [],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "ClassicGF",
-        "gf_type": "ClassicGF",
+        'name': "ClassicGF",
+        'gf_type': "ClassicGF",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
-        'M': [128, 256, N],
-        'bias_mlp': True,
+        'M': [],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     }
 ]
@@ -149,7 +138,7 @@ def test_arch(signals, nn_params, model_params, p_n, device):
         mean_err[i], med_err[i], mse[i] = model.test(data.test_X, data.test_Y)
 
         print("DONE {}: MSE={} - Mean Err={} - Median Err={} - Params={} - t_conv={} - epochs={}".format(
-            i, mse[i], mean_err[i], med_err[i], model.count_params(), round(t_train[i], 4), epochs[i]
+            i+1, mse[i], mean_err[i], med_err[i], model.count_params(), round(t_train[i], 4), epochs[i]
         ), flush=True)
 
     results = {

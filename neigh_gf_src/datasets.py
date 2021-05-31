@@ -8,7 +8,7 @@ SBM = 1
 ER = 2
 BA = 3
 
-MAX_RETRIES = 20
+MAX_RETRIES = 50
 
 # Comm Node Assignment Constants
 CONT = 1    # Contiguous nodes

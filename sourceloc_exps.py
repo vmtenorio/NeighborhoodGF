@@ -22,16 +22,14 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 signals = {}
 signals['N_samples'] = 2000
 signals['N_graphs'] = 25
-signals['L_filter'] = 10
-signals['noise'] = 0
-signals['test_only'] = False
-
+signals['min_l'] = 10
+signals['max_l'] = 25
 signals['median'] = True
 
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 128
+G_params['N'] = N = 256
 G_params['k'] = k = 4
 G_params['p'] = 0.3
 G_params['q'] = 0.01 / k
@@ -52,39 +50,36 @@ model_params['verbose'] = VERB
 
 EXPS = [
     {
-        "name": "NeighborhoodGF",
-        "gf_type": "NeighborhoodGF",
+        'name': "NeighborhoodGF",
+        'gf_type': "NeighborhoodGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "NeighborhoodGF-Binarization",
-        "gf_type": "NeighborhoodGFType2",
+        'name': "NeighborhoodGF-Binarization",
+        'gf_type': "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "ClassicGF",
-        "gf_type": "ClassicGF",
+        'name': "ClassicGF",
+        'gf_type': "ClassicGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     }
 ]
@@ -114,7 +109,8 @@ def test_arch(signals, nn_params, model_params, k, device):
         # Define the data model
         data = datasets.SourcelocSynthetic(G,
                                             signals['N_samples'],
-                                            min_l=10, max_l=25,
+                                            min_l=signals['min_l'],
+                                            max_l=signals['max_l'],
                                             median=signals['median'])
         #data.to_unit_norm()
         data.to_tensor()

@@ -1,6 +1,7 @@
 import time
 import torch.nn as nn
 import numpy as np
+import torch
 import sys
 sys.path.append('..')
 
@@ -14,28 +15,18 @@ from neigh_gf_src.arch import GCNN
 VERB = True
 ARCH_INFO = True
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 signals = {}
 signals['N_samples'] = 2000
-signals['N_graphs'] = 25
-signals['L_filter'] = 4
-signals['noise'] = 0
-signals['test_only'] = False
-
-signals['perm'] = True
-signals['pct'] = True
-if signals['pct']:
-    signals['eps1'] = 10
-    signals['eps2'] = 10
-else:
-    signals['eps1'] = 0.1
-    signals['eps2'] = 0.3
-
+signals['min_l'] = 10
+signals['max_l'] = 25
 signals['median'] = True
 
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 128
+G_params['N'] = N = 256
 G_params['k'] = k = 4
 G_params['p'] = 0.3
 G_params['q'] = [[0, 0.0075, 0, 0.0],
@@ -85,11 +76,12 @@ if __name__ == '__main__':
     # Define the data model
     data = datasets.SourcelocSynthetic(G,
                                         signals['N_samples'],
-                                        #signals['L_filter'],
-                                        min_l=10, max_l=25,
+                                        min_l=signals['min_l'],
+                                        max_l=signals['max_l'],
                                         median=signals['median'])
     #data.to_unit_norm()
     data.to_tensor()
+    data.to(device)
 
     G.compute_laplacian('normalized')
     archit = GCNN(G.W.todense(),
@@ -103,6 +95,8 @@ if __name__ == '__main__':
                 )
 
     model_params['arch'] = archit
+
+    archit.to(device)
 
     model = Model(**model_params)
     t_init = time.time()

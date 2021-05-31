@@ -24,18 +24,6 @@ signals['N_samples'] = 2000
 signals['N_graphs'] = 25
 signals['min_l'] = 10
 signals['max_l'] = 25
-signals['noise'] = 0
-signals['test_only'] = False
-
-signals['perm'] = True
-signals['pct'] = True
-if signals['pct']:
-    signals['eps1'] = 10
-    signals['eps2'] = 10
-else:
-    signals['eps1'] = 0.1
-    signals['eps2'] = 0.3
-
 signals['median'] = True
 
 # Graph parameters
@@ -65,39 +53,36 @@ model_params['verbose'] = VERB
 
 EXPS = [
     {
-        "name": "NeighborhoodGF",
-        "gf_type": "NeighborhoodGF",
+        'name': "NeighborhoodGF",
+        'gf_type': "NeighborhoodGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "NeighborhoodGF-Binarization",
-        "gf_type": "NeighborhoodGFType2",
+        'name': "NeighborhoodGF-Binarization",
+        'gf_type': "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     },
     {
-        "name": "ClassicGF",
-        "gf_type": "ClassicGF",
+        'name': "ClassicGF",
+        'gf_type': "ClassicGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
-        'batch_norm': True,
         'arch_info': ARCH_INFO
     }
 ]

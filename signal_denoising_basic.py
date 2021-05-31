@@ -1,6 +1,7 @@
 import time
 import torch.nn as nn
 import numpy as np
+import torch
 import sys
 sys.path.append('..')
 
@@ -9,35 +10,22 @@ from neigh_gf_src.model import Model, ADAM
 from neigh_gf_src import datasets
 from neigh_gf_src.arch import GCNN
 
-# TODO: Optimize for GPU
-
 # Parameters
 
 VERB = True
 ARCH_INFO = True
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 signals = {}
 signals['N_samples'] = 2000
-signals['N_graphs'] = 20
 signals['L_filter'] = 6
-signals['noise'] = 0
-signals['test_only'] = False
-
-signals['perm'] = True
-signals['pct'] = True
-if signals['pct']:
-    signals['eps1'] = 10
-    signals['eps2'] = 10
-else:
-    signals['eps1'] = 0.1
-    signals['eps2'] = 0.3
-
 signals['median'] = True
 
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 128
+G_params['N'] = N = 256
 G_params['k'] = k = 4
 G_params['p'] = 0.3
 G_params['q'] = [[0, 0.0075, 0, 0.0],
@@ -52,8 +40,8 @@ nn_params = {}
 nn_params['gf_type'] = "NeighborhoodGF"
 nn_params['F'] = [1, 2, 4, 8, 4, 2, 1]
 nn_params['K'] = 3
-nn_params['M'] = [128, 256, N]
-nn_params['bias_mlp'] = True
+nn_params['M'] = []
+nn_params['bias_mlp'] = False
 nonlin_s = "tanh"
 if nonlin_s == "relu":
     nn_params['nonlin'] = nn.ReLU
@@ -63,8 +51,6 @@ elif nonlin_s == "sigmoid":
     nn_params['nonlin'] = nn.Sigmoid
 else:
     nn_params['nonlin'] = None
-nn_params['last_act_fn'] = nn.Tanh
-nn_params['batch_norm'] = True
 nn_params['arch_info'] = ARCH_INFO
 
 # Model parameters
@@ -77,6 +63,7 @@ model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
 model_params['max_non_dec'] = 10
+model_params['es_loss_type'] = "train"
 model_params['verbose'] = VERB
 
 p_n = 0.025
@@ -93,6 +80,7 @@ if __name__ == '__main__':
                                     median=signals['median'])
     #data.to_unit_norm()
     data.to_tensor()
+    data.to(device)
 
     G.compute_laplacian('normalized')
     archit = GCNN(G.W.todense(),
@@ -106,6 +94,7 @@ if __name__ == '__main__':
                 )
 
     model_params['arch'] = archit
+    archit.to(device)
 
     model = Model(**model_params)
     t_init = time.time()
@@ -116,3 +105,4 @@ if __name__ == '__main__':
     print("DONE: MSE={} - Mean Err={} - Median Err={} - Params={} - t_conv={} - epochs={}".format(
         mse, mean_err, med_err, model.count_params(), round(t_conv, 4), epochs
     ), flush=True)
+
