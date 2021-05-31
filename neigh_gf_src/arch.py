@@ -10,6 +10,7 @@ class GCNN(nn.Module):
                 F,          # Features in each graph filter layer (list)
                 K,          # Filter taps in each graph filter layer
                 M,          # Neurons in each fully connected layer (list)
+                bias_mlp,   # Whether or not to use Bias in the FC layers
                 nonlin,     # Non linearity function
                 arch_info): # Print architecture information
         super(GCNN, self).__init__()
@@ -47,12 +48,12 @@ class GCNN(nn.Module):
         if len(self.M) > 0:
             # As last layer has no nonlin (if its softmax is done later, etc.)
             # define here the first layer before loop
-            fcl.append(nn.Linear(firstLayerIn, self.M[0]))
+            fcl.append(nn.Linear(firstLayerIn, self.M[0], bias=bias_mlp))
             for m in range(1,len(self.M)):
                 # print("FC layer: " + str(m))
                 # print(str(self.M[m-1]) + ' x ' + str(self.M[m]))
                 fcl.append(self.nonlin())
-                fcl.append(nn.Linear(self.M[m-1], self.M[m]))
+                fcl.append(nn.Linear(self.M[m-1], self.M[m], bias=bias_mlp))
 
         self.FCL = nn.Sequential(*fcl)
 

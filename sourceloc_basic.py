@@ -51,6 +51,7 @@ nn_params['gf_type'] = "NeighborhoodGF"
 nn_params['F'] = [1, 2, 4, 8, 16, 16]
 nn_params['K'] = 3
 nn_params['M'] = [128, 64, 32, k]
+nn_params['bias_mlp'] = True
 nonlin_s = "tanh"
 if nonlin_s == "relu":
     nn_params['nonlin'] = nn.ReLU
@@ -96,6 +97,7 @@ if __name__ == '__main__':
                     nn_params['F'],
                     nn_params['K'],
                     nn_params['M'],
+                    nn_params['bias_mlp'],
                     nn_params['nonlin'],
                     ARCH_INFO
                 )

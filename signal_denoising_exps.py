@@ -69,6 +69,7 @@ EXPS = [
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
         'M': [128, 256, N],
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
@@ -80,6 +81,7 @@ EXPS = [
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
         'M': [128, 256, N],
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
@@ -91,6 +93,7 @@ EXPS = [
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
         'M': [128, 256, N],
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'batch_norm': True,
@@ -130,6 +133,7 @@ def test_arch(signals, nn_params, model_params, p_n, device):
                       nn_params['F'],
                       nn_params['K'],
                       nn_params['M'],
+                      nn_params['bias_mlp'],
                       nn_params['nonlin'],
                       ARCH_INFO
                     )
