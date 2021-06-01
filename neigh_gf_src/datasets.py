@@ -8,7 +8,7 @@ SBM = 1
 ER = 2
 BA = 3
 
-MAX_RETRIES = 20
+MAX_RETRIES = 50
 
 # Comm Node Assignment Constants
 CONT = 1    # Contiguous nodes
@@ -102,7 +102,7 @@ def norm_graph(A):
     return (A/dmax).astype(np.float32)
 
 
-class DiffusedSparse:
+class BaseGraphDataset:
     """
     Class for generating a graph signal X following a diffusion
     process generated over an underlying graph.
@@ -111,8 +111,7 @@ class DiffusedSparse:
         - n_samples: a list with the number of samples for training, validation
           and test. Alternatively, if only an integer is provided
     """
-    def __init__(self, G, n_samples, min_d=-1, max_d=1,
-                 median=True, same_coeffs=False, neg_coeffs=False):
+    def __init__(self, G, n_samples, median=True):
 
         if isinstance(n_samples, int):
             self.n_train = n_samples
@@ -145,10 +144,14 @@ class DiffusedSparse:
         self.test_X = Tensor(self.test_X).view([self.n_test, n_chans, N])
         self.test_Y = Tensor(self.test_Y).view([self.n_test, N])
 
-    def to_unit_norm(self):
+    def to_unit_norm(self, y_norm=False):
         self.train_X = self._to_unit_norm(self.train_X)
         self.val_X = self._to_unit_norm(self.val_X)
         self.test_X = self._to_unit_norm(self.test_X)
+        if y_norm:
+            self.train_Y = self._to_unit_norm(self.train_Y)
+            self.val_Y = self._to_unit_norm(self.val_Y)
+            self.test_Y = self._to_unit_norm(self.test_Y)
 
     def _to_unit_norm(self, signals):
         """
@@ -173,6 +176,99 @@ class DiffusedSparse:
             self.G.plot_signal(Y, ax=axes[1, 1])
         if show:
             plt.show()
+
+    def add_noise(self, p_n, test_only=True):
+        if p_n == 0:
+            return
+        self.test_X = self.add_noise_to_X(self.test_X, p_n)
+
+        if test_only:
+            return
+        self.val_X = self.add_noise_to_X(self.val_X, p_n)
+        self.train_X = self.add_noise_to_X(self.train_X, p_n)
+
+    def add_noise_to_X(self, X, p_n):
+        p_x = np.sum(X**2, axis=1)
+        sigma = np.sqrt(p_n * p_x / X.shape[1])
+        noise = (np.random.randn(X.shape[0], X.shape[1]).T * sigma).T
+        return X + noise
+
+    def create_samples_S(self, delts, min_d, max_d):
+        train_deltas = self.delta_values(self.G, self.n_train, delts, min_d, max_d)
+        val_deltas = self.delta_values(self.G, self.n_val, delts, min_d, max_d)
+        test_deltas = self.delta_values(self.G, self.n_test, delts, min_d, max_d)
+        self.train_S = self.sparse_S(self.G, train_deltas)
+        self.val_S = self.sparse_S(self.G, val_deltas)
+        self.test_S = self.sparse_S(self.G, test_deltas)
+
+    def create_samples_X(self):
+        self.train_X = self.H.dot(self.train_S.T).T
+        self.val_X = self.H.dot(self.val_S.T).T
+        self.test_X = self.H.dot(self.test_S.T).T
+        if self.median:
+            self.train_X = self.median_neighbours_nodes(self.train_X, self.G)
+            self.val_X = self.median_neighbours_nodes(self.val_X, self.G)
+            self.test_X = self.median_neighbours_nodes(self.test_X, self.G)
+
+    def to(self, device):
+        self.train_X = self.train_X.to(device)
+        self.train_Y = self.train_Y.to(device)
+        self.val_X = self.val_X.to(device)
+        self.val_Y = self.val_Y.to(device)
+        self.test_X = self.test_X.to(device)
+        self.test_Y = self.test_Y.to(device)
+
+class DenoisingSparse(BaseGraphDataset):
+    '''
+    Class for the Denoising problem, where we try to recover the original signal
+    from a noisy version of it
+    '''
+    def __init__(self, G, n_samples, L, n_delts, p_n, x_type="random", min_d=-1,
+                 max_d=1, median=True, neg_coeffs=False, test_only=False):
+
+        assert x_type in ["random", "deltas"], \
+            'Only "random" input or an sparse signal ("deltas") allowed'
+
+        super(DenoisingSparse, self).__init__(G, n_samples, median)
+
+        self.L = L
+        self.n_delts = n_delts
+        self.x_type = x_type
+        self.min_d = min_d
+        self.max_d = max_d
+        self.neg_coeffs = neg_coeffs
+
+        assert self.n_train > self.n_val and self.n_train > self.n_test, \
+                "Need more training samples than validation and test"
+
+        self.train_X, self.train_Y = self.create_samples(self.n_train)
+        idxs = np.random.permutation(self.n_train)
+        val_idx = idxs[:self.n_val]
+        test_idx = idxs[-self.n_test:]
+
+        self.val_X, self.val_Y = self.train_X[val_idx].copy(), self.train_Y[val_idx].copy()
+        self.test_X, self.test_Y = self.train_X[test_idx].copy(), self.train_Y[test_idx].copy()
+
+        self.add_noise_to_X(self.train_Y, p_n)
+
+        self.to_unit_norm(y_norm=True)
+
+    def create_samples(self, n_samples):
+        if self.x_type == "deltas":
+            deltas = self.delta_values(self.G, n_samples, self.n_delts, self.min_d, self.max_d)
+            orig_signal = self.sparse_S(self.G, deltas)
+        else:
+            orig_signal = np.random.randn(n_samples, self.G.N)
+
+        self.random_diffusing_filter(self.L, self.neg_coeffs)
+
+        Y = self.H.dot(orig_signal.T).T
+        if self.median:
+            Y = self.median_neighbours_nodes(Y, self.G)
+
+        X = np.random.randn(n_samples, self.G.N)
+
+        return X, Y
 
     def delta_values(self, G, n_samp, n_deltas, min_delta, max_delta):
         n_comms = G.info['comm_sizes'].size
@@ -206,117 +302,44 @@ class DiffusedSparse:
                 S[com_nodes[rand_index], i] = delta
         return S.T
 
-    def add_noise(self, p_n, test_only=True):
-        if p_n == 0:
-            return
-        self.test_X = self.add_noise_to_X(self.test_X, p_n)
-
-        if test_only:
-            return
-        self.val_X = self.add_noise_to_X(self.val_X, p_n)
-        self.train_X = self.add_noise_to_X(self.train_X, p_n)
-
-    def add_noise_to_X(self, X, p_n):
-        p_x = np.sum(X**2, axis=1)
-        sigma = np.sqrt(p_n * p_x / X.shape[1])
-        noise = (np.random.randn(X.shape[0], X.shape[1]).T * sigma).T
-        return X + noise
-
-    def random_diffusing_filter(self):
+    def random_diffusing_filter(self, L, neg_coeffs):
         """
         Create a linear random diffusing filter with L random coefficients
         using the graphs shift operator from G.
         Arguments:
             - L: number of filter coeffcients
         """
-        self.H = np.zeros(self.G.W.shape)
-        S = norm_graph(self.G.W.todense())
-        for l in range(self.h.size):
-            self.H += self.h[l]*np.linalg.matrix_power(S, l)
-
-    def create_samples_S(self, delts, min_d, max_d):
-        train_deltas = self.delta_values(self.G, self.n_train, delts, min_d, max_d)
-        val_deltas = self.delta_values(self.G, self.n_val, delts, min_d, max_d)
-        test_deltas = self.delta_values(self.G, self.n_test, delts, min_d, max_d)
-        self.train_S = self.sparse_S(self.G, train_deltas)
-        self.val_S = self.sparse_S(self.G, val_deltas)
-        self.test_S = self.sparse_S(self.G, test_deltas)
-
-    def create_samples_X(self):
-        self.train_X = self.H.dot(self.train_S.T).T
-        self.val_X = self.H.dot(self.val_S.T).T
-        self.test_X = self.H.dot(self.test_S.T).T
-        if self.median:
-            self.train_X = self.median_neighbours_nodes(self.train_X, self.G)
-            self.val_X = self.median_neighbours_nodes(self.val_X, self.G)
-            self.test_X = self.median_neighbours_nodes(self.test_X, self.G)
-
-    def to(self, device):
-        self.train_X = self.train_X.to(device)
-        self.train_Y = self.train_Y.to(device)
-        self.val_X = self.val_X.to(device)
-        self.val_Y = self.val_Y.to(device)
-        self.test_X = self.test_X.to(device)
-        self.test_Y = self.test_Y.to(device)
-
-class DenoisingSparse(DiffusedSparse):
-    '''
-    Class for the Denoising problem, where we try to recover the original signal
-    from a noisy version of it
-    '''
-    def __init__(self, G, n_samples, L, n_delts, p_n, min_d=-1,
-                 max_d=1, median=True, same_coeffs=False, neg_coeffs=False, test_only=False):
-
-        super(DenoisingSparse, self).__init__(G, n_samples, min_d,
-                                          max_d, median, same_coeffs, neg_coeffs)
 
         if neg_coeffs:
-            self.h = 2 * np.random.rand(L) - 1
+            h = 2 * np.random.rand(L) - 1
         else:
-            self.h = np.random.rand(L)
+            h = np.random.rand(L)
+        self.H = np.zeros(self.G.W.shape)
+        S = norm_graph(self.G.W.todense())
+        for l in range(h.size):
+            self.H += h[l]*np.linalg.matrix_power(S, l)
 
-        self.train_X, self.train_Y = self.create_samples(self.n_train, n_delts, min_d, max_d)
-        self.val_X, self.val_Y = self.create_samples(self.n_val, n_delts, min_d, max_d)
-        self.test_X, self.test_Y = self.create_samples(self.n_test, n_delts, min_d, max_d)
 
-        self.add_noise_to_X(self.train_Y, p_n)
-
-        self.to_unit_norm()
-
-    def create_samples(self, n_samples, n_delts, min_d, max_d):
-        deltas = self.delta_values(self.G, n_samples, n_delts, min_d, max_d)
-        delta_S = self.sparse_S(self.G, deltas)
-        self.random_diffusing_filter()
-
-        Y = self.H.dot(delta_S.T).T
-        if self.median:
-            Y = self.median_neighbours_nodes(Y, self.G)
-
-        X = np.random.randn(n_samples, self.G.N)
-
-        return X, Y
-
-    def to_unit_norm(self):
-        self.train_X = self._to_unit_norm(self.train_X)
-        self.train_Y = self._to_unit_norm(self.train_Y)
-        self.val_X = self._to_unit_norm(self.val_X)
-        self.val_Y = self._to_unit_norm(self.val_Y)
-        self.test_X = self._to_unit_norm(self.test_X)
-        self.test_Y = self._to_unit_norm(self.test_Y)
-
-class SourcelocSynthetic(DiffusedSparse):
+class SourcelocSynthetic(BaseGraphDataset):
     """
     Class for the source localization problem, where 1 delta is diffused over the
     graph and the algorithm has to recover the community of the node where the delta
     was placed.
     """
     def __init__(self, G, n_samples, min_l=10, max_l=25, min_d=-1,
-                 max_d=1, median=True, same_coeffs=False, neg_coeffs=False):
+                 max_d=1, median=True, neg_coeffs=False):
 
-        super(SourcelocSynthetic, self).__init__(G, n_samples,
-                                                min_d, max_d,    # Just 1 delt
-                                                median, same_coeffs,
-                                                neg_coeffs)
+        super(SourcelocSynthetic, self).__init__(G, n_samples, median)
+
+        self.N = self.G.W.shape[0]
+
+        S = norm_graph(self.G.W.todense())
+        self.Spow = np.zeros((max_l,self.N,self.N))
+        self.Spow[0,:,:] = np.eye(self.N)
+        # Calc powers of S
+        for l in range(1, max_l):
+            self.Spow[l,:,:] = self.Spow[l-1,:,:] @ S
+
 
         self.train_X, self.train_Y = self.create_samples(self.n_train,
                                                     min_d, max_d,
@@ -371,20 +394,13 @@ class SourcelocSynthetic(DiffusedSparse):
             - L: number of filter coeffcients
         """
         h = np.random.randn(max_l, n_samples)
-        N = self.G.W.shape[0]
-        H = np.zeros((n_samples, max_l, N, N))
-
-        S = norm_graph(self.G.W.todense())
-        Spow = np.zeros((max_l,N,N))
-        # Calc powers of S
-        for l in range(max_l):
-            Spow[l,:,:] = np.linalg.matrix_power(S, l)
+        H = np.zeros((n_samples, max_l, self.N, self.N))
 
         for i in range(n_samples):
             n_coefs = np.random.randint(min_l, max_l)
             coefs = h[:n_coefs,i]
 
-            H[i,:n_coefs,:,:] = coefs[:,None,None]*Spow[:n_coefs,:,:]
+            H[i,:n_coefs,:,:] = coefs[:,None,None]*self.Spow[:n_coefs,:,:]
 
         H = np.sum(H, axis=1)
         return H
@@ -400,6 +416,4 @@ class SourcelocSynthetic(DiffusedSparse):
             X = self.median_neighbours_nodes(X, self.G)
 
         return X, Y
-
-
 

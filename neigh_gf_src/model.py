@@ -15,8 +15,10 @@ class Model:
     def __init__(self, arch,
                  learning_rate=0.1, decay_rate=0.99, loss_func=nn.MSELoss(),
                  epochs=50, batch_size=100, eval_freq=5, verbose=False,
-                 max_non_dec=10, opt=ADAM):
+                 max_non_dec=10, opt=ADAM, es_loss_type="eval"):
         assert opt in [SGD, ADAM], 'Unknown optimizer type'
+        assert es_loss_type in ["train", "eval"],\
+                'Early Stopping loss is either train or eval'
         self.arch = arch
         self.loss = loss_func
         self.epochs = epochs
@@ -24,6 +26,7 @@ class Model:
         self.eval_freq = eval_freq
         self.verbose = verbose
         self.max_non_dec = max_non_dec
+        self.es_loss_type = es_loss_type
         if opt == ADAM:
             self.optim = optim.Adam(self.arch.parameters(), lr=learning_rate)
         else:
@@ -63,13 +66,20 @@ class Model:
             train_err[i-1] = training_loss.detach().item()
             t = time.time()-t_start
 
+
             # Predict eval error
             with no_grad():
                 predicted_Y_eval = self.arch(val_X)
                 eval_loss = self.loss(predicted_Y_eval, val_Y)
                 val_err[i-1] = eval_loss.detach().item()
-            if eval_loss.data*1.005 < best_err:
-                best_err = eval_loss.data
+
+            if self.es_loss_type == "train":
+                es_loss = training_loss
+            else:
+                es_loss = eval_loss
+
+            if es_loss.data*1.005 < best_err:
+                best_err = es_loss.data
                 best_net = copy.deepcopy(self.arch)
                 cont = 0
             else:
