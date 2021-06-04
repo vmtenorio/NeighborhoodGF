@@ -90,7 +90,8 @@ class Model:
             if self.verbose and i % self.eval_freq == 0:
                 print('Epoch {}/{}({:.4f}s)\tEval Loss: {:.8f}\tTrain: {:.8f}'
                       .format(i, self.epochs, t, eval_loss, training_loss))
-        self.arch = best_net
+        if best_net != None:
+            self.arch = best_net
         return i-cont, train_err, val_err
 
     def state_dict(self):

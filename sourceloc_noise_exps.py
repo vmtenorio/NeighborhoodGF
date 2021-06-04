@@ -10,7 +10,7 @@ sys.path.append('..')
 from neigh_gf_src.model import Model, ADAM
 
 from neigh_gf_src import datasets
-from neigh_gf_src.arch import GCNN
+from neigh_gf_src.arch import GCNN, MLP
 
 # Parameters
 
@@ -57,7 +57,8 @@ EXPS = [
         'gf_type': "NeighborhoodGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
-        'M': [128, 64, 32, k],
+        'bias_gf': True,
+        'M': [64, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
@@ -68,7 +69,8 @@ EXPS = [
         'gf_type': "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
-        'M': [128, 64, 32, k],
+        'bias_gf': True,
+        'M': [64, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
@@ -79,12 +81,22 @@ EXPS = [
         'gf_type': "ClassicGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
-        'M': [128, 64, 32, k],
+        'bias_gf': True,
+        'M': [64, k],
+        'bias_mlp': True,
+        'nonlin': nn.Tanh,
+        'nonlin_s': "tanh", # For logging purposes
+        'arch_info': ARCH_INFO
+    },
+    {
+        'name': "BasicMLP",
+        'M': [N, 256, 512, 256, 128, 128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
     }
+
 ]
 
 p_n_list = [0, .025, .05, 0.075, .1]
@@ -114,15 +126,23 @@ def test_arch(signals, nn_params, model_params, p_n, device):
         data.to(device)
 
         G.compute_laplacian('normalized')
-        archit = GCNN(G.W.todense(),
-                      nn_params['gf_type'],
-                      nn_params['F'],
-                      nn_params['K'],
-                      nn_params['M'],
-                      nn_params['bias_mlp'],
-                      nn_params['nonlin'],
-                      ARCH_INFO
-                    )
+        if "MLP" in nn_params['name']:
+            archit = MLP(nn_params['M'],
+                        nn_params['bias_mlp'],
+                        nn_params['nonlin'],
+                        ARCH_INFO
+                        )
+        else:
+            archit = GCNN(G.W.todense(),
+                        nn_params['gf_type'],
+                        nn_params['F'],
+                        nn_params['K'],
+                        nn_params['bias_gf'],
+                        nn_params['M'],
+                        nn_params['bias_mlp'],
+                        nn_params['nonlin'],
+                        ARCH_INFO
+                        )
 
         archit.to(device)
 
@@ -163,7 +183,7 @@ def save_results(path, results):
 if __name__ == '__main__':
 
     results = {}
-    for exp in EXPS:
+    for exp in EXPS[:,:,-1]:
 
         print("***************************")
         print("Starting " + exp['name'])

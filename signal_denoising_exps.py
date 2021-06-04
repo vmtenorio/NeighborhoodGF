@@ -60,8 +60,9 @@ EXPS = [
         'gf_type': "NeighborhoodGF",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
+        'bias_gf': True,
         'M': [],
-        'bias_mlp': False,
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -71,8 +72,9 @@ EXPS = [
         'gf_type': "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
+        'bias_gf': True,
         'M': [],
-        'bias_mlp': False,
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -82,8 +84,9 @@ EXPS = [
         'gf_type': "ClassicGF",
         'F': [1, 2, 4, 8, 4, 2, 1],
         'K': 3,
+        'bias_gf': True,
         'M': [],
-        'bias_mlp': False,
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -121,6 +124,7 @@ def test_arch(signals, nn_params, model_params, p_n, device):
                       nn_params['gf_type'],
                       nn_params['F'],
                       nn_params['K'],
+                      nn_params['bias_gf'],
                       nn_params['M'],
                       nn_params['bias_mlp'],
                       nn_params['nonlin'],
