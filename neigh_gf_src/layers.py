@@ -127,7 +127,7 @@ class BaseGF(nn.Module):
         stdv = 1. / math.sqrt(self.Fin * self.K)
         self.weights.data.uniform_(-stdv, stdv)
         if self.bias_gf:
-            self.bias = nn.parameter.Parameter(torch.Tensor(1, self.N, self.Fout))
+            self.bias = nn.parameter.Parameter(torch.Tensor(1, self.Fout, self.N))
             self.bias.data.uniform_(-stdv, stdv)
 
         self.build_filter()

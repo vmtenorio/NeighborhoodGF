@@ -163,17 +163,18 @@ class BaseGraphDataset:
             return None
         return (signals.T/norm).T
 
-    def plot_train_signals(self, ids, show=True):
+    def plot_train_signals(self, ids, plot_y=False, show=True):
         if not isinstance(ids, list) and not isinstance(ids, range):
             ids = [ids]
         for id in ids:
-            Sx = self.train_S[id, :]
             X = self.train_X[id, :]
-            Y = self.train_Y[id, :]
-            _, axes = plt.subplots(2, 2)
-            self.G.plot_signal(S, ax=axes[0, 0])
-            self.G.plot_signal(X, ax=axes[0, 1])
-            self.G.plot_signal(Y, ax=axes[1, 1])
+            if plot_y:
+                Y = self.train_Y[id, :]
+                _, axes = plt.subplots(1, 2)
+                self.G.plot_signal(X, ax=axes[0])
+                self.G.plot_signal(Y, ax=axes[1])
+            else:
+                self.G.plot_signal(X)
         if show:
             plt.show()
 
@@ -333,13 +334,9 @@ class SourcelocSynthetic(BaseGraphDataset):
 
         self.N = self.G.W.shape[0]
 
-        S = norm_graph(self.G.W.todense())
-        self.Spow = np.zeros((max_l,self.N,self.N))
-        self.Spow[0,:,:] = np.eye(self.N)
-        # Calc powers of S
-        for l in range(1, max_l):
-            self.Spow[l,:,:] = self.Spow[l-1,:,:] @ S
+        self.calc_powers_S(max_l)
 
+        self.calc_highest_degree_node()
 
         self.train_X, self.train_Y = self.create_samples(self.n_train,
                                                     min_d, max_d,
@@ -351,6 +348,28 @@ class SourcelocSynthetic(BaseGraphDataset):
                                                     min_d, max_d,
                                                     min_l, max_l)
         self.to_unit_norm()
+
+    def calc_powers_S(self, max_l):
+        S = norm_graph(self.G.W.todense())
+        self.Spow = np.zeros((max_l,self.N,self.N))
+        self.Spow[0,:,:] = np.eye(self.N)
+        # Calc powers of S
+        for l in range(1, max_l):
+            self.Spow[l,:,:] = self.Spow[l-1,:,:] @ S
+
+    def calc_highest_degree_node(self):
+        node_deg = self.G.W.sum(axis=1)
+        k = self.G.info['comm_sizes'].size
+        highest_nodes = np.zeros(k)
+
+        for com in range(k):
+            com_nodes, = np.asarray(self.G.info['node_com'] == com).nonzero()
+
+            idx_max = np.argmax(node_deg[com_nodes])
+
+            highest_nodes[com] = com_nodes[idx_max]
+
+        self.G.info['nodes_highest'] = highest_nodes.astype(int)
 
     def delta_values(self, n_samp, min_delta, max_delta):
         step = max_delta-min_delta
@@ -373,7 +392,8 @@ class SourcelocSynthetic(BaseGraphDataset):
             node_idx = np.random.randint(0, G.info['comm_sizes'][com_idx])
 
             com_nodes, = np.asarray(G.info['node_com'] == com_idx).nonzero()
-            S[com_nodes[node_idx], i] = delta_values[i]
+            #S[com_nodes[node_idx], i] = delta_values[i]
+            S[G.info['nodes_highest'][com_idx], i] = delta_values[i]
             Y[i] = com_idx
         return S.T, Y
 
@@ -393,20 +413,24 @@ class SourcelocSynthetic(BaseGraphDataset):
         Arguments:
             - L: number of filter coeffcients
         """
-        h = np.random.randn(max_l, n_samples)
-        H = np.zeros((n_samples, max_l, self.N, self.N))
+        #h = np.random.randn(max_l, n_samples)
+        h = np.ones((max_l, n_samples))
+        #H = np.zeros((n_samples, max_l, self.N, self.N))
+        H = np.zeros((n_samples, self.N, self.N))
 
         for i in range(n_samples):
             n_coefs = np.random.randint(min_l, max_l)
             coefs = h[:n_coefs,i]
 
-            H[i,:n_coefs,:,:] = coefs[:,None,None]*self.Spow[:n_coefs,:,:]
+            #H[i,:n_coefs,:,:] = coefs[:,None,None]*self.Spow[:n_coefs,:,:]
+            H[i,:,:] = self.Spow[n_coefs,:,:]
 
-        H = np.sum(H, axis=1)
+        #H = np.sum(H, axis=1)
         return H
 
     def create_samples(self, n_samples, min_d, max_d, min_l, max_l):
-        deltas = self.delta_values(n_samples, min_d, max_d)
+        #deltas = self.delta_values(n_samples, min_d, max_d)
+        deltas = np.ones(n_samples)
         delta_S, Y = self.sparse_S(self.G, deltas)
         H = self.random_diffusing_filter(n_samples, min_l, max_l)
 

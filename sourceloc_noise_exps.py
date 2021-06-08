@@ -183,7 +183,7 @@ def save_results(path, results):
 if __name__ == '__main__':
 
     results = {}
-    for exp in EXPS[:,:,-1]:
+    for exp in EXPS:
 
         print("***************************")
         print("Starting " + exp['name'])
