@@ -120,7 +120,7 @@ def test_arch(signals, nn_params, model_params, k, device):
         data.to(device)
 
         G.compute_laplacian('normalized')
-        archit = GCNN(G.W.todense(),
+        archit = GCNN(datasets.norm_graph(G.W.todense()),
                       nn_params['gf_type'],
                       nn_params['F'],
                       nn_params['K'],

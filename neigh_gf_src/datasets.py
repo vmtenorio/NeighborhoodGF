@@ -468,8 +468,8 @@ class SourcelocSynthetic(BaseGraphDataset):
         self.test_Y = LongTensor(self.test_Y)
 
     def create_samples(self, n_samples, min_l, max_l):
-        Y = np.zeros(n_samples)
         X = np.zeros((n_samples, self.N))
+        Y = np.zeros(n_samples)
         S = norm_graph(self.G.W.todense())
 
         for i in range(n_samples):

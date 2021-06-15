@@ -29,13 +29,10 @@ signals['median'] = True
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 256
-G_params['k'] = k = 4
-G_params['p'] = 0.3
-G_params['q'] = [[0, 0.0075, 0, 0.0],
-                 [0.0075, 0, 0.004, 0.0025],
-                 [0, 0.004, 0, 0.005],
-                 [0, 0.0025, 0.005, 0]]
+G_params['N'] = N = 100
+G_params['k'] = k = 5
+G_params['p'] = 0.8
+G_params['q'] = 0.2
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -58,8 +55,8 @@ EXPS = [
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'bias_gf': True,
-        'M': [64, k],
-        'bias_mlp': True,
+        'M': [16, k],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -70,8 +67,8 @@ EXPS = [
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'bias_gf': True,
-        'M': [64, k],
-        'bias_mlp': True,
+        'M': [16, k],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -82,21 +79,20 @@ EXPS = [
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
         'bias_gf': True,
-        'M': [64, k],
-        'bias_mlp': True,
+        'M': [16, k],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
     },
     {
         'name': "BasicMLP",
-        'M': [N, 256, 512, 256, 128, 128, 64, 32, k],
-        'bias_mlp': True,
+        'M': [N, 128, 64, 64, 32, k],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
     }
-
 ]
 
 p_n_list = [0, .025, .05, 0.075, .1]

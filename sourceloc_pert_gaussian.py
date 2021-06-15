@@ -22,9 +22,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 signals = {}
 signals['N_samples'] = 4000
 signals['N_graphs'] = 10
-signals['pos_value'] = .5
-signals['neg_value'] = -0.1
-signals['diffusion'] = 2
+signals['pos_value'] = .15
+signals['neg_value'] = -0.15
+signals['diffusion'] = 5
 signals['median'] = True
 signals['perm'] = True
 
@@ -38,7 +38,7 @@ G_params['q'] = [[0, 0.0075, 0, 0.0],
                  [0.0075, 0, 0.004, 0.0025],
                  [0, 0.004, 0, 0.005],
                  [0, 0.0025, 0.005, 0]]
-G_params['q'] = 0.05
+G_params['q'] = 0.2
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -52,6 +52,7 @@ model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
 model_params['max_non_dec'] = 15
+model_params['min_es'] = 40
 model_params['verbose'] = VERB
 
 EXPS = [
@@ -59,10 +60,10 @@ EXPS = [
         'name': "NeighborhoodGF",
         'gf_type': "NeighborhoodGF",
         'F': [1, 32, 32],
-        'K': 5,
+        'K': 3,
         'bias_gf': True,
         'M': [16, k],
-        'bias_mlp': True,
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -71,10 +72,10 @@ EXPS = [
         'name': "NeighborhoodGF-Binarization",
         'gf_type': "NeighborhoodGFType2",
         'F': [1, 32, 32],
-        'K': 5,
+        'K': 3,
         'bias_gf': True,
         'M': [16, k],
-        'bias_mlp': True,
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
@@ -83,10 +84,10 @@ EXPS = [
         'name': "ClassicGF",
         'gf_type': "ClassicGF",
         'F': [1, 32, 32],
-        'K': 5,
+        'K': 3,
         'bias_gf': True,
         'M': [16, k],
-        'bias_mlp': True,
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO

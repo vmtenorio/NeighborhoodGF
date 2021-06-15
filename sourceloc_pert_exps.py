@@ -14,15 +14,15 @@ from neigh_gf_src.arch import GCNN, MLP
 
 # Parameters
 
-VERB = True
+VERB = False
 ARCH_INFO = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 signals = {}
-signals['N_samples'] = 4000
+signals['N_samples'] = 2000
 signals['N_graphs'] = 10
-signals['min_l'] = 10
+signals['min_l'] = 1
 signals['max_l'] = 25
 signals['median'] = True
 signals['perm'] = True
@@ -30,14 +30,10 @@ signals['perm'] = True
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 256
-G_params['k'] = k = 4
+G_params['N'] = N = 100
+G_params['k'] = k = 5
 G_params['p'] = 0.8
-G_params['q'] = [[0, 0.0075, 0, 0.0],
-                 [0.0075, 0, 0.004, 0.0025],
-                 [0, 0.004, 0, 0.005],
-                 [0, 0.0025, 0.005, 0]]
-G_params['q'] = 0.05
+G_params['q'] = 0.2
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -50,15 +46,16 @@ model_params['loss_func'] = nn.CrossEntropyLoss()
 model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
-model_params['max_non_dec'] = 15
-model_params['min_es'] = 50
+model_params['max_non_dec'] = 10
+model_params['min_es'] = 75
 model_params['verbose'] = VERB
 
 EXPS = [
     {
         'name': "NeighborhoodGF",
         'gf_type': "NeighborhoodGF",
-        'F': [1, 32, 32],
+        'F': [1, 4, 8, 16, 16],
+        #'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -70,7 +67,8 @@ EXPS = [
     {
         'name': "NeighborhoodGF-Binarization",
         'gf_type': "NeighborhoodGFType2",
-        'F': [1, 32, 32],
+        'F': [1, 4, 8, 16, 16],
+        #'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -82,7 +80,8 @@ EXPS = [
     {
         'name': "ClassicGF",
         'gf_type': "ClassicGF",
-        'F': [1, 32, 32],
+        'F': [1, 4, 8, 16, 16],
+        #'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -93,17 +92,18 @@ EXPS = [
     },
     {
         'name': "BasicMLP",
-        'M': [N, 256, 128, 64, 32, k],
-        'bias_mlp': True,
+        'M': [N, 128, 64, 64, 32, k],
+        'bias_mlp': False,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
     }
+
 ]
 
-prob_list = [0, 5, 10, 15, 20]
+pct_list = [0, 5, 10, 15, 20]
 
-def test_arch(signals, nn_params, model_params, prob, device):
+def test_arch(signals, nn_params, model_params, pct, device):
 
     loss = np.zeros(signals['N_graphs'])
     acc = np.zeros(signals['N_graphs'])
@@ -115,19 +115,22 @@ def test_arch(signals, nn_params, model_params, prob, device):
     for i in range(signals['N_graphs']):
 
         Ga, Gb = datasets.perturbated_graphs(signals['g_params'],
-                                             creat=prob, dest=prob,
+                                             creat=pct, dest=pct,
                                              pct=True, perm=signals['perm']
                                             )
 
+        #G = datasets.create_graph(signals['g_params'])
+
         # Define the data model
-        data = datasets.SourcelocSynthetic(Ga, # Using the first graph to create the signal
+        data = datasets.SourcelocSynthetic(Ga,
                                             signals['N_samples'],
                                             min_l=signals['min_l'],
                                             max_l=signals['max_l'],
-                                            median=signals['median']
-                                          )
+                                            median=signals['median'])
         #data.to_unit_norm()
         #data.add_noise(p_n, test_only=True)
+        #data.plot_train_signals([0,1], False, True)
+        #data.print_data_summary()
         data.to_tensor()
         data.to(device)
 
@@ -190,16 +193,17 @@ if __name__ == '__main__':
 
     results = {}
     for exp in EXPS:
-
+        #if "Classic" not in exp['name']:
+        #    continue
         print("***************************")
         print("Starting " + exp['name'])
         results[exp['name']] = exp.copy()
         del results[exp['name']]['nonlin'] # Not possible to be saved in json format
         results_exp = {}
-        for prob in prob_list:
+        for pct in pct_list:
             print("***************************")
-            print("Starting with prob: ", str(prob))
-            results_exp[prob] = test_arch(signals, exp, model_params, prob, device)
+            print("Starting with pct: ", str(pct))
+            results_exp[pct] = test_arch(signals, exp, model_params, pct, device)
 
         results[exp['name']]["results"] = results_exp
 
