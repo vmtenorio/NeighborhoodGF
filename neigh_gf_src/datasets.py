@@ -420,8 +420,7 @@ class SourcelocSynthetic(BaseGraphDataset):
     graph and the algorithm has to recover the community of the node where the delta
     was placed.
     """
-    def __init__(self, G, n_samples, min_l=10, max_l=25, min_d=-1,
-                 max_d=1, median=True, neg_coeffs=False):
+    def __init__(self, G, n_samples, min_l=10, max_l=25, median=True):
 
         super(SourcelocSynthetic, self).__init__(G, n_samples, median)
 
@@ -432,13 +431,10 @@ class SourcelocSynthetic(BaseGraphDataset):
         self.calc_highest_degree_node()
 
         self.train_X, self.train_Y = self.create_samples(self.n_train,
-                                                    min_d, max_d,
                                                     min_l, max_l)
         self.val_X, self.val_Y = self.create_samples(self.n_val,
-                                                    min_d, max_d,
                                                     min_l, max_l)
         self.test_X, self.test_Y = self.create_samples(self.n_test,
-                                                    min_d, max_d,
                                                     min_l, max_l)
         #self.to_unit_norm()
 
@@ -462,32 +458,6 @@ class SourcelocSynthetic(BaseGraphDataset):
 
         self.G.info['nodes_highest'] = highest_nodes.astype(int)
 
-    def delta_values(self, n_samp, min_delta, max_delta):
-        step = max_delta-min_delta
-        delt_val = np.random.randn(n_samp)*step/4# + delta_means
-        return delt_val
-
-    def sparse_S(self, G, delta_values):
-        """
-        Create random sparse signal s composed of different deltas placed in the
-        different communities of the graph. If the graph is an ER, then deltas
-        are just placed on random nodes
-        """
-        n_samp = delta_values.shape[0]
-        S = np.zeros((G.N, n_samp))
-        Y = np.zeros(n_samp)
-
-        # Randomly assign delta value to comm nodes
-        for i in range(n_samp):
-            com_idx = np.random.randint(0, G.info['comm_sizes'].size)
-            node_idx = np.random.randint(0, G.info['comm_sizes'][com_idx])
-
-            com_nodes, = np.asarray(G.info['node_com'] == com_idx).nonzero()
-            #S[com_nodes[node_idx], i] = delta_values[i]
-            S[G.info['nodes_highest'][com_idx], i] = delta_values[i]
-            Y[i] = com_idx
-        return S.T, Y
-
     def to_tensor(self, n_chans=1):
         N = self.train_X.shape[1]
         self.train_X = Tensor(self.train_X).view([self.n_train, n_chans, N])
@@ -497,40 +467,26 @@ class SourcelocSynthetic(BaseGraphDataset):
         self.test_X = Tensor(self.test_X).view([self.n_test, n_chans, N])
         self.test_Y = LongTensor(self.test_Y)
 
-    def random_diffusing_filter(self, n_samples, min_l, max_l):
-        """
-        Create a linear random diffusing filter with L random coefficients
-        using the graphs shift operator from G.
-        Arguments:
-            - L: number of filter coeffcients
-        """
-        #h = np.random.randn(max_l, n_samples)
-        h = np.ones((max_l, n_samples))
-        #H = np.zeros((n_samples, max_l, self.N, self.N))
-        H = np.zeros((n_samples, self.N, self.N))
+    def create_samples(self, n_samples, min_l, max_l):
+        Y = np.zeros(n_samples)
+        X = np.zeros((n_samples, self.N))
+        S = norm_graph(self.G.W.todense())
 
         for i in range(n_samples):
-            n_coefs = np.random.randint(min_l, max_l)
-            coefs = h[:n_coefs,i]
+            diff = np.random.randint(min_l, max_l)
 
-            #H[i,:n_coefs,:,:] = coefs[:,None,None]*self.Spow[:n_coefs,:,:]
-            H[i,:,:] = self.Spow[n_coefs,:,:]
+            com_idx = np.random.randint(0, self.G.info['comm_sizes'].size)
+            #node_idx = np.random.randint(0, self.G.info['comm_sizes'][com_idx])
+            #com_nodes, = np.asarray(self.G.info['node_com'] == com_idx).nonzero()
 
-        #H = np.sum(H, axis=1)
-        return H
-
-    def create_samples(self, n_samples, min_d, max_d, min_l, max_l):
-        #deltas = self.delta_values(n_samples, min_d, max_d)
-        deltas = np.ones(n_samples)
-        delta_S, Y = self.sparse_S(self.G, deltas)
-        H = self.random_diffusing_filter(n_samples, min_l, max_l)
-
-        # Increase 1 dimension of delta_S to be T x N x 1
-        X = np.matmul(H, delta_S[:,:,None]).squeeze()
-        if self.median:
-            X = self.median_neighbours_nodes(X, self.G)
+            signal = np.zeros(self.N)
+            #signal[com_nodes[node_idx]] = 1
+            signal[self.G.info['nodes_highest'][com_idx]] = 1
+            X[i,:] = self.Spow[diff,:,:] @ signal
+            Y[i] = com_idx
 
         return X, Y
+
 
 class SourcelocSyntheticGaussian(BaseGraphDataset):
     def __init__(self, G, n_samples, pos_value=0.5, neg_value=-0.1,
