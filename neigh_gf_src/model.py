@@ -163,3 +163,86 @@ class LinearModel:
         mse = self.loss(Tensor(Y_hat), test_Y.view(shape_Y))
         err = np.sum((Y_hat-Y)**2, axis=1)/np.linalg.norm(Y, axis=1)**2
         return np.mean(err), np.median(err), mse.detach().numpy()
+
+
+class ModelSamuel:
+    def __init__(self, arch,
+                 learning_rate=0.001, loss_func=nn.MSELoss(reduction='none'),
+                 epochs=1000, eval_freq=100, verbose=False,
+                 opt=ADAM):
+        assert opt in [SGD, ADAM], 'Unknown optimizer type'
+        self.arch = arch
+        self.loss = loss_func
+        self.epochs = epochs
+        self.eval_freq = eval_freq
+        self.verbose = verbose
+        if opt == ADAM:
+            self.optim = optim.Adam(self.arch.parameters(), lr=learning_rate)
+        else:
+            self.optim = optim.SGD(self.arch.parameters(), lr=learning_rate)
+
+    def count_params(self):
+        ps = sum(p.numel() for p in self.arch.parameters() if p.requires_grad)
+        return ps
+
+    def get_filter_coefs(self):
+        filter_coefs = []
+        for layer in self.arch.model:
+            if isinstance(layer, GFUps):
+                filter_coefs.append(layer.hs.detach().numpy())
+        return np.array(filter_coefs)
+
+    def fit(self, signal, x=None, reduce_err=True):
+        if x is not None:
+            x = Tensor(x)
+        x_n = Tensor(Tensor(signal))
+
+        best_err = 1000000
+        best_net = None
+        best_epoch = 0
+        train_err = np.zeros((self.epochs, signal.size))
+        val_err = np.zeros((self.epochs, signal.size))
+        for i in range(1, self.epochs+1):
+            t_start = time.time()
+            self.arch.zero_grad()
+
+            x_hat = self.arch(self.arch.input)
+
+            loss = self.loss(x_hat, x_n)
+            loss_red = loss.mean()
+
+            if best_err > 1.005*loss_red:
+                best_epoch = i
+                best_err = loss_red
+                best_net = copy.deepcopy(self.arch)
+
+            # Evaluate if the model is overfitting noise
+            if x is not None:
+                with no_grad():
+                    eval_loss = self.loss(x_hat, x)
+                    val_err[i-1, :] = eval_loss.detach().numpy()
+
+            loss_red.backward()
+            self.optim.step()
+            train_err[i-1, :] = loss.detach().numpy()
+            t = time.time()-t_start
+
+            if self.verbose and i % self.eval_freq == 0:
+                err_val_i = np.sum(val_err[i-1, :])
+                err_train_i = np.sum(train_err[i-1, :])
+                print('Epoch {}/{}({:.4f}s)\tTrain Loss: {:.8f}\tEval: {:.8f}'
+                      .format(i, self.epochs, t,  err_train_i, err_val_i))
+
+        self.arch = best_net
+        if reduce_err:
+            train_err = np.sum(train_err, axis=1)
+            val_err = np.sum(val_err, axis=1)
+        return train_err, val_err, best_epoch
+
+    def test(self, x):
+        x_hat = self.arch(self.arch.input).squeeze()
+        node_err = self.loss(x_hat, Tensor(x)).detach().numpy()
+        x_hat = x_hat.detach().numpy()
+        err = np.sum(node_err)/np.linalg.norm(x)**2
+        return np.median(node_err), err 
+   
