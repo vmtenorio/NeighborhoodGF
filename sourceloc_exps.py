@@ -54,6 +54,7 @@ EXPS = [
         'gf_type': "NeighborhoodGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
+        'bias_gf': True,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
@@ -65,6 +66,7 @@ EXPS = [
         'gf_type': "NeighborhoodGFType2",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
+        'bias_gf': True,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
@@ -76,6 +78,7 @@ EXPS = [
         'gf_type': "ClassicGF",
         'F': [1, 2, 4, 8, 16, 16],
         'K': 3,
+        'bias_gf': True,
         'M': [128, 64, 32, k],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
@@ -117,10 +120,11 @@ def test_arch(signals, nn_params, model_params, k, device):
         data.to(device)
 
         G.compute_laplacian('normalized')
-        archit = GCNN(G.W.todense(),
+        archit = GCNN(datasets.norm_graph(G.W.todense()),
                       nn_params['gf_type'],
                       nn_params['F'],
                       nn_params['K'],
+                      nn_params['bias_gf'],
                       nn_params['M'],
                       nn_params['bias_mlp'],
                       nn_params['nonlin'],

@@ -83,11 +83,14 @@ def my_eig(S):
     d = d[order]
     V = V[:,order]
     D = np.diag(d)
-    VV = np.linalg.inv(V)
-    SS = V.dot(D.dot(VV))
-    diff = np.absolute(S-SS)
-    if diff.max() > 1e-6:
-        print("Eigendecomposition not good enough")
+    try:
+        VV = np.linalg.inv(V)
+        SS = V.dot(D.dot(VV))
+        diff = np.absolute(S-SS)
+        if diff.max() > 1e-6:
+            print("Eigendecomposition not good enough")
+    except np.linalg.LinAlgError:
+        print("V matrix is not invertible")
     return V,D
 
 def norm_graph(A):
@@ -100,6 +103,96 @@ def norm_graph(A):
     d = np.diag(D)
     dmax = d[0]
     return (A/dmax).astype(np.float32)
+
+def perturbate_probability(Gx, eps_c, eps_d):
+    A_x = Gx.W.todense()
+    no_link_ind = np.where(A_x == 0)
+    link_ind = np.where(A_x == 1)
+
+    mask_c = np.random.choice([0, 1], p=[1-eps_c, eps_c],
+                              size=no_link_ind[0].shape)
+    mask_d = np.random.choice([0, 1], p=[1-eps_d, eps_d],
+                              size=link_ind[0].shape)
+
+    A_x[link_ind] = np.logical_xor(A_x[link_ind], mask_d).astype(int)
+    A_x[no_link_ind] = np.logical_xor(A_x[no_link_ind], mask_c).astype(int)
+    A_x = np.triu(A_x, 1)
+    A_y = A_x + A_x.T
+    return A_y
+
+def perturbate_percentage(Gx, creat, destr):
+    A_x_triu = Gx.W.todense()
+    A_x_triu[np.tril_indices(Gx.N)] = -1
+
+    # Create links
+    no_link_i = np.where(A_x_triu == 0)
+    links_c = np.random.choice(no_link_i[0].size, int(Gx.Ne * creat/100),
+                               replace=False)
+    idx_c = (no_link_i[0][links_c], no_link_i[1][links_c])
+
+    # Destroy links
+    link_i = np.where(A_x_triu == 1)
+    links_d = np.random.choice(link_i[0].size, int(Gx.Ne * destr/100),
+                               replace=False)
+    idx_d = (link_i[0][links_d], link_i[1][links_d])
+
+    A_x_triu[np.tril_indices(Gx.N)] = 0
+    A_x_triu[idx_c] = 1
+    A_x_triu[idx_d] = 0
+    A_y = A_x_triu + A_x_triu.T
+    return A_y
+
+def perm_graph(A, coords, node_com, comm_sizes):
+    N = A.shape[0]
+    # Create permutation matrix
+    P = np.zeros(A.shape)
+    i = np.arange(N)
+    j = np.random.permutation(N)
+    P[i, j] = 1
+
+    # Permute
+    A_p = P.dot(A).dot(P.T)
+    assert np.sum(np.diag(A_p)) == 0, 'Diagonal of permutated A is not 0'
+    coords_p = P.dot(coords)
+    node_com_p = P.dot(node_com)
+    G = Graph(A_p)
+    G.set_coordinates(coords_p)
+    G.info = {'node_com': node_com_p,
+              'comm_sizes': comm_sizes,
+              'perm_matrix': P}
+    return G
+
+def perturbated_graphs(g_params, creat=5, dest=5, pct=True, perm=False, seed=None):
+    """
+    Create 2 closely related graphs. The first graph is created following the
+    indicated model and the second is a perturbated version of the previous
+    where links are created or destroid with a small probability.
+    Arguments:
+        - g_params: a dictionary containing all the parameters for creating
+          the desired graph. The options are explained in the documentation
+          of the function 'create_graph'
+        - eps_c: probability for creating new edges
+        - eps_d: probability for destroying existing edges
+    """
+    Gx = create_graph(g_params, seed)
+    if pct:
+        Ay = perturbate_percentage(Gx, creat, dest)
+    else:
+        Ay = perturbate_probability(Gx, creat, dest)
+    coords_Gy = Gx.coords
+    node_com_Gy = Gx.info['node_com']
+    comm_sizes_Gy = Gx.info['comm_sizes']
+    assert np.sum(np.diag(Ay)) == 0, 'Diagonal of A is not 0'
+
+    if perm:
+        Gy = perm_graph(Ay, coords_Gy, node_com_Gy, comm_sizes_Gy)
+    else:
+        Gy = Graph(Ay)
+        Gy.set_coordinates(coords_Gy)
+        Gy.info = {'node_com': node_com_Gy,
+                   'comm_sizes': comm_sizes_Gy}
+    assert Gy.is_connected(), 'Could not create connected graph Gy'
+    return Gx, Gy
 
 
 class BaseGraphDataset:
@@ -132,7 +225,7 @@ class BaseGraphDataset:
         X_aux = np.zeros(X.shape)
         for i in range(G.N):
             _, neighbours = np.asarray(G.W.todense()[i, :] != 0).nonzero()
-            X_aux[:, i] = np.median(X[:, np.append(neighbours, i)], axis=1)
+            X_aux[:, i] = np.median(X[:, np.append(neighbours, i)], axis=1).squeeze()
         return X_aux
 
     def to_tensor(self, n_chans=1):
@@ -163,17 +256,18 @@ class BaseGraphDataset:
             return None
         return (signals.T/norm).T
 
-    def plot_train_signals(self, ids, show=True):
+    def plot_train_signals(self, ids, plot_y=False, show=True):
         if not isinstance(ids, list) and not isinstance(ids, range):
             ids = [ids]
         for id in ids:
-            Sx = self.train_S[id, :]
             X = self.train_X[id, :]
-            Y = self.train_Y[id, :]
-            _, axes = plt.subplots(2, 2)
-            self.G.plot_signal(S, ax=axes[0, 0])
-            self.G.plot_signal(X, ax=axes[0, 1])
-            self.G.plot_signal(Y, ax=axes[1, 1])
+            if plot_y:
+                Y = self.train_Y[id, :]
+                _, axes = plt.subplots(1, 2)
+                self.G.plot_signal(X, ax=axes[0])
+                self.G.plot_signal(Y, ax=axes[1])
+            else:
+                self.G.plot_signal(X)
         if show:
             plt.show()
 
@@ -326,13 +420,25 @@ class SourcelocSynthetic(BaseGraphDataset):
     graph and the algorithm has to recover the community of the node where the delta
     was placed.
     """
-    def __init__(self, G, n_samples, min_l=10, max_l=25, min_d=-1,
-                 max_d=1, median=True, neg_coeffs=False):
+    def __init__(self, G, n_samples, min_l=10, max_l=25, median=True):
 
         super(SourcelocSynthetic, self).__init__(G, n_samples, median)
 
         self.N = self.G.W.shape[0]
 
+        self.calc_powers_S(max_l)
+
+        self.calc_highest_degree_node()
+
+        self.train_X, self.train_Y = self.create_samples(self.n_train,
+                                                    min_l, max_l)
+        self.val_X, self.val_Y = self.create_samples(self.n_val,
+                                                    min_l, max_l)
+        self.test_X, self.test_Y = self.create_samples(self.n_test,
+                                                    min_l, max_l)
+        #self.to_unit_norm()
+
+    def calc_powers_S(self, max_l):
         S = norm_graph(self.G.W.todense())
         self.Spow = np.zeros((max_l,self.N,self.N))
         self.Spow[0,:,:] = np.eye(self.N)
@@ -340,42 +446,17 @@ class SourcelocSynthetic(BaseGraphDataset):
         for l in range(1, max_l):
             self.Spow[l,:,:] = self.Spow[l-1,:,:] @ S
 
+    def calc_highest_degree_node(self):
+        node_deg = self.G.W.sum(axis=1)
+        k = self.G.info['comm_sizes'].size
+        highest_nodes = np.zeros(k)
 
-        self.train_X, self.train_Y = self.create_samples(self.n_train,
-                                                    min_d, max_d,
-                                                    min_l, max_l)
-        self.val_X, self.val_Y = self.create_samples(self.n_val,
-                                                    min_d, max_d,
-                                                    min_l, max_l)
-        self.test_X, self.test_Y = self.create_samples(self.n_test,
-                                                    min_d, max_d,
-                                                    min_l, max_l)
-        self.to_unit_norm()
+        for com in range(k):
+            com_nodes, = np.asarray(self.G.info['node_com'] == com).nonzero()
+            idx_max = np.argmax(node_deg[com_nodes])
+            highest_nodes[com] = com_nodes[idx_max]
 
-    def delta_values(self, n_samp, min_delta, max_delta):
-        step = max_delta-min_delta
-        delt_val = np.random.randn(n_samp)*step/4# + delta_means
-        return delt_val
-
-    def sparse_S(self, G, delta_values):
-        """
-        Create random sparse signal s composed of different deltas placed in the
-        different communities of the graph. If the graph is an ER, then deltas
-        are just placed on random nodes
-        """
-        n_samp = delta_values.shape[0]
-        S = np.zeros((G.N, n_samp))
-        Y = np.zeros(n_samp)
-
-        # Randomly assign delta value to comm nodes
-        for i in range(n_samp):
-            com_idx = np.random.randint(0, G.info['comm_sizes'].size)
-            node_idx = np.random.randint(0, G.info['comm_sizes'][com_idx])
-
-            com_nodes, = np.asarray(G.info['node_com'] == com_idx).nonzero()
-            S[com_nodes[node_idx], i] = delta_values[i]
-            Y[i] = com_idx
-        return S.T, Y
+        self.G.info['nodes_highest'] = highest_nodes.astype(int)
 
     def to_tensor(self, n_chans=1):
         N = self.train_X.shape[1]
@@ -386,34 +467,68 @@ class SourcelocSynthetic(BaseGraphDataset):
         self.test_X = Tensor(self.test_X).view([self.n_test, n_chans, N])
         self.test_Y = LongTensor(self.test_Y)
 
-    def random_diffusing_filter(self, n_samples, min_l, max_l):
-        """
-        Create a linear random diffusing filter with L random coefficients
-        using the graphs shift operator from G.
-        Arguments:
-            - L: number of filter coeffcients
-        """
-        h = np.random.randn(max_l, n_samples)
-        H = np.zeros((n_samples, max_l, self.N, self.N))
+    def create_samples(self, n_samples, min_l, max_l):
+        X = np.zeros((n_samples, self.N))
+        Y = np.zeros(n_samples)
+        S = norm_graph(self.G.W.todense())
 
         for i in range(n_samples):
-            n_coefs = np.random.randint(min_l, max_l)
-            coefs = h[:n_coefs,i]
+            diff = np.random.randint(min_l, max_l)
 
-            H[i,:n_coefs,:,:] = coefs[:,None,None]*self.Spow[:n_coefs,:,:]
+            com_idx = np.random.randint(0, self.G.info['comm_sizes'].size)
+            #node_idx = np.random.randint(0, self.G.info['comm_sizes'][com_idx])
+            #com_nodes, = np.asarray(self.G.info['node_com'] == com_idx).nonzero()
 
-        H = np.sum(H, axis=1)
-        return H
-
-    def create_samples(self, n_samples, min_d, max_d, min_l, max_l):
-        deltas = self.delta_values(n_samples, min_d, max_d)
-        delta_S, Y = self.sparse_S(self.G, deltas)
-        H = self.random_diffusing_filter(n_samples, min_l, max_l)
-
-        # Increase 1 dimension of delta_S to be T x N x 1
-        X = np.matmul(H, delta_S[:,:,None]).squeeze()
-        if self.median:
-            X = self.median_neighbours_nodes(X, self.G)
+            signal = np.zeros(self.N)
+            #signal[com_nodes[node_idx]] = 1
+            signal[self.G.info['nodes_highest'][com_idx]] = 1
+            X[i,:] = self.Spow[diff,:,:] @ signal
+            Y[i] = com_idx
 
         return X, Y
 
+
+class SourcelocSyntheticGaussian(BaseGraphDataset):
+    def __init__(self, G, n_samples, pos_value=0.5, neg_value=-0.1,
+                    diffusion=1, median=True):
+
+        super(SourcelocSyntheticGaussian, self).__init__(G, n_samples, median)
+
+        self.N = self.G.W.shape[0]
+        self.diffusion = diffusion
+
+        self.train_X, self.train_Y = self.create_samples(self.n_train,
+                                                    pos_value, neg_value)
+        self.val_X, self.val_Y = self.create_samples(self.n_val,
+                                                    pos_value, neg_value)
+        self.test_X, self.test_Y = self.create_samples(self.n_test,
+                                                    pos_value, neg_value)
+        #self.to_unit_norm()
+
+    def create_samples(self, n_samples, pos_value, neg_value):
+        X = np.zeros((n_samples, self.N))
+        Y = np.zeros(n_samples)
+        for i in range(n_samples):
+            com_idx = np.random.randint(0, self.G.info['comm_sizes'].size)
+
+            #com_nodes, = np.asarray(self.G.info['node_com'] == com_idx).nonzero()
+            pos_gauss = np.random.randn(self.N) + pos_value
+            neg_gauss = np.random.randn(self.N) + neg_value
+            X[i,:] = np.where(self.G.info['node_com'] == com_idx, pos_gauss, neg_gauss)
+            Y[i] = com_idx
+
+        for i in range(self.diffusion):
+            X = X @ self.G.W.todense()
+
+        if self.median:
+            X = self.median_neighbours_nodes(X, self.G)
+        return X, Y
+
+    def to_tensor(self, n_chans=1):
+        N = self.train_X.shape[1]
+        self.train_X = Tensor(self.train_X).view([self.n_train, n_chans, N])
+        self.train_Y = LongTensor(self.train_Y)
+        self.val_X = Tensor(self.val_X).view([self.n_val, n_chans, N])
+        self.val_Y = LongTensor(self.val_Y)
+        self.test_X = Tensor(self.test_X).view([self.n_test, n_chans, N])
+        self.test_Y = LongTensor(self.test_Y)

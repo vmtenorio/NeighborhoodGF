@@ -111,7 +111,8 @@ class BaseGF(nn.Module):
                 # GSO
                 S,
                 # Size of the filter
-                Fin, Fout, K
+                Fin, Fout, K,
+                bias_gf
                 ):
         super(BaseGF, self).__init__()
         self.S = S
@@ -119,13 +120,15 @@ class BaseGF(nn.Module):
         self.Fin = Fin
         self.Fout = Fout
         self.K = K
+        self.bias_gf = bias_gf
 
         # Fernando's weight Initialization
         self.weights = nn.parameter.Parameter(torch.Tensor(self.Fin*self.K, self.Fout))
         stdv = 1. / math.sqrt(self.Fin * self.K)
         self.weights.data.uniform_(-stdv, stdv)
-        # self.bias = nn.parameter.Parameter(torch.Tensor(1, self.N, self.Fout))
-        # self.bias.data.uniform_(-stdv, stdv)
+        if self.bias_gf:
+            self.bias = nn.parameter.Parameter(torch.Tensor(1, self.Fout, self.N))
+            self.bias.data.uniform_(-stdv, stdv)
 
         self.build_filter()
         #torch.set_printoptions(threshold=100)
@@ -160,7 +163,8 @@ class BaseGF(nn.Module):
         y = y.reshape([T, self.N, self.Fout])
         y = y.permute(0, 2, 1)
 
-        # y = y + self.bias
+        if self.bias_gf:
+            y = y + self.bias
 
         return y
 

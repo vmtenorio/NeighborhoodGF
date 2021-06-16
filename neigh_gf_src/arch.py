@@ -9,6 +9,7 @@ class GCNN(nn.Module):
                 gf_type,    # Type of graph filter to use
                 F,          # Features in each graph filter layer (list)
                 K,          # Filter taps in each graph filter layer
+                bias_gf,    # Whether or not to use Bias in the GF layers
                 M,          # Neurons in each fully connected layer (list)
                 bias_mlp,   # Whether or not to use Bias in the FC layers
                 nonlin,     # Non linearity function
@@ -37,7 +38,7 @@ class GCNN(nn.Module):
         for l in range(len(self.F)-1):
             # print("Graph filter layer: " + str(l))
             # print(str(self.F[l]) + ' x ' + str(self.F[l+1]))
-            gfl.append(self.gf(self.S, self.F[l], self.F[l+1], self.K))
+            gfl.append(self.gf(self.S, self.F[l], self.F[l+1], self.K, bias_gf))
             gfl.append(self.nonlin())
 
         self.GFL = nn.Sequential(*gfl)
@@ -95,3 +96,58 @@ class GCNN(nn.Module):
 
         return self.FCL(y)
 
+
+class MLP(nn.Module):
+    def __init__(self,
+                M,          # Neurons in each fully connected layer (list)
+                bias_mlp,   # Whether or not to use Bias in the FC layers
+                nonlin,     # Non linearity function
+                arch_info): # Print architecture information
+        super(MLP, self).__init__()
+        # In python 3
+        # super()
+
+        self.M = M
+        self.nonlin = nonlin
+        self.bias_mlp = bias_mlp
+
+        # Define the layer
+
+        # Fully connected Layers
+        fcl = []
+        if len(self.M) > 0:
+            # As last layer has no nonlin (if its softmax is done later, etc.)
+            # define here the first layer before loop
+            fcl.append(nn.Linear(self.M[0], self.M[1], bias=bias_mlp))
+            for m in range(2,len(self.M)):
+                # print("FC layer: " + str(m))
+                # print(str(self.M[m-1]) + ' x ' + str(self.M[m]))
+                fcl.append(self.nonlin())
+                fcl.append(nn.Linear(self.M[m-1], self.M[m], bias=bias_mlp))
+
+        self.FCL = nn.Sequential(*fcl)
+
+        if arch_info:
+            print("Architecture:")
+            print("M: {}, Bias: {}".format(self.M, self.bias_mlp))
+            print("Non lin: " + str(self.nonlin))
+
+    def forward(self, x):
+
+        # Check type
+        # if type(x) != torch.FloatTensor:
+        #     x = torch.FloatTensor(x)
+
+        # Params
+        T = x.shape[0]
+        try:
+            Fin = x.shape[1]
+            xN = x.shape[2]
+            assert Fin*xN == self.M[0]
+            x = x.reshape([T, Fin*xN])
+        except IndexError:
+            xN = x.shape[1]
+            assert xN == self.M[0]
+
+        # Define the forward pass
+        return self.FCL(x)

@@ -15,7 +15,7 @@ class Model:
     def __init__(self, arch,
                  learning_rate=0.1, decay_rate=0.99, loss_func=nn.MSELoss(),
                  epochs=50, batch_size=100, eval_freq=5, verbose=False,
-                 max_non_dec=10, opt=ADAM, es_loss_type="eval"):
+                 max_non_dec=10, opt=ADAM, es_loss_type="eval", min_es=0):
         assert opt in [SGD, ADAM], 'Unknown optimizer type'
         assert es_loss_type in ["train", "eval"],\
                 'Early Stopping loss is either train or eval'
@@ -27,6 +27,7 @@ class Model:
         self.verbose = verbose
         self.max_non_dec = max_non_dec
         self.es_loss_type = es_loss_type
+        self.min_es = min_es
         if opt == ADAM:
             self.optim = optim.Adam(self.arch.parameters(), lr=learning_rate)
         else:
@@ -83,14 +84,15 @@ class Model:
                 best_net = copy.deepcopy(self.arch)
                 cont = 0
             else:
-                if cont >= self.max_non_dec:
+                if cont >= self.max_non_dec and i > self.min_es:
                     break
                 cont += 1
 
             if self.verbose and i % self.eval_freq == 0:
                 print('Epoch {}/{}({:.4f}s)\tEval Loss: {:.8f}\tTrain: {:.8f}'
                       .format(i, self.epochs, t, eval_loss, training_loss))
-        self.arch = best_net
+        if best_net != None:
+            self.arch = best_net
         return i-cont, train_err, val_err
 
     def state_dict(self):
