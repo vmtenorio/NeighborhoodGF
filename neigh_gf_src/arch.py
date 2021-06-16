@@ -1,5 +1,9 @@
+import math
+import numpy as np
+
 import torch.nn as nn
 import torch
+from torch import Tensor, eye, manual_seed, nn, no_grad, optim
 from . import layers
 
 
@@ -96,6 +100,90 @@ class GCNN(nn.Module):
 
         return self.FCL(y)
 
+
+class GraphDecoder(nn.Module):
+    """
+    This class represent a basic graph decoder with only one layer following
+    the model G(C) = ReLU(HC)v, where instead of upsampling a fixed
+    low pass graph filter is used.
+    """
+    def __init__(self, features, H, scale_std=0.01):
+        """
+        The arguments are:
+        - features: the number of features
+        - H: fixed graph filter
+        - scale_std: scale the std of the learnable weights initialization
+        """
+        super().__init__()
+        N = H.shape[0]
+        self.input = Tensor(H).view([1, N, N])
+        self.v = torch.ones(features)/math.sqrt(features)
+        self.v[math.ceil(features/2):] *= -1
+        self.conv = nn.Conv1d(N, features, kernel_size=1,
+                              bias=False)
+        std = scale_std/math.sqrt(N)
+        self.conv.weight.data.normal_(0, std)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, input):
+        return self.relu(self.conv(input)).squeeze().t().mv(self.v)
+
+    def count_params(self):
+        return sum(p.numel() for p in self.model.parameters()
+                   if p.requires_grad)
+    
+    
+class GraphDeepDecoder(nn.Module):
+    def __init__(self,
+                 # Decoder args
+                 features, nodes, H,
+                 # Activation functions
+                 act_fn=nn.ReLU(), last_act_fn=None,
+                 input_std=0.01, w_std=0.01):
+        assert len(features) == len(nodes), ERR_DIFF_N_LAYERS
+
+        super(GraphDeepDecoder, self).__init__()
+        self.model = nn.Sequential()
+        self.fts = features
+        self.nodes = nodes
+        self.H = H
+        self.kernel_size = 1
+        self.act_fn = act_fn
+        self.last_act_fn = last_act_fn
+        self.w_std = w_std/np.sqrt(features)
+        self.build_network()
+
+        shape = [1, self.fts[0], self.nodes[0]]
+        std = input_std/np.sqrt(shape[2])
+        self.input = Tensor(torch.zeros(shape)).data.normal_(0, std)
+
+    def add_layer(self, module):
+        self.model.add_module(str(len(self.model) + 1), module)
+
+    def build_network(self):
+        for l in range(len(self.fts)-1):
+            conv = nn.Conv1d(self.fts[l], self.fts[l+1], self.kernel_size,
+                             bias=False)
+            conv.weight.data.normal_(0, self.w_std[l])
+            self.add_layer(conv)
+            self.add_layer(layers.FixedFilter(self.H))
+
+            if l < (len(self.fts)-2):
+                # Not the last layer
+                if self.act_fn is not None:
+                    self.add_layer(self.act_fn)
+            else:
+                # Last layer
+                if self.last_act_fn is not None:
+                    self.add_layer(self.last_act_fn)
+        return self.model
+
+    def forward(self, x):
+        return self.model(x).squeeze()
+
+    def count_params(self):
+        return sum(p.numel() for p in self.model.parameters()
+                   if p.requires_grad)
 
 class MLP(nn.Module):
     def __init__(self,

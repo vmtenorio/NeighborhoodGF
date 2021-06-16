@@ -9,6 +9,10 @@ import numpy as np
 
 DEBUG = False
 
+# Error messages
+ERR_WRONG_INPUT_SIZE = 'Number of input samples must be 1'
+
+
 class GraphFilter(nn.Module):
     def __init__(self,
                  # GSO
@@ -222,3 +226,12 @@ class BasicGNN(nn.Module):
 
         return self.S @ x @ self.weights
 
+
+class FixedFilter(nn.Module):
+    def __init__(self, H):
+        nn.Module.__init__(self)
+        self.H_T = torch.Tensor(H).t()
+
+    def forward(self, input):
+        assert input.shape[0] == 1, ERR_WRONG_INPUT_SIZE
+        return input.matmul(self.H_T)
