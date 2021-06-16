@@ -14,17 +14,18 @@ from neigh_gf_src.arch import GCNN, MLP
 
 # Parameters
 
-VERB = True
+VERB = False
 ARCH_INFO = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 signals = {}
 signals['N_samples'] = 2000
-signals['N_graphs'] = 25
-signals['min_l'] = 10
+signals['N_graphs'] = 10
+signals['min_l'] = 1
 signals['max_l'] = 25
 signals['median'] = True
+signals['perm'] = True
 
 # Graph parameters
 G_params = {}
@@ -45,14 +46,16 @@ model_params['loss_func'] = nn.CrossEntropyLoss()
 model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
-model_params['max_non_dec'] = 15
+model_params['max_non_dec'] = 10
+model_params['min_es'] = 75
 model_params['verbose'] = VERB
 
 EXPS = [
     {
         'name': "NeighborhoodGF",
         'gf_type': "NeighborhoodGF",
-        'F': [1, 2, 4, 8, 16, 16],
+        'F': [1, 4, 8, 16, 16],
+        #'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -64,7 +67,8 @@ EXPS = [
     {
         'name': "NeighborhoodGF-Binarization",
         'gf_type': "NeighborhoodGFType2",
-        'F': [1, 2, 4, 8, 16, 16],
+        'F': [1, 4, 8, 16, 16],
+        #'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -76,7 +80,8 @@ EXPS = [
     {
         'name': "ClassicGF",
         'gf_type': "ClassicGF",
-        'F': [1, 2, 4, 8, 16, 16],
+        'F': [1, 4, 8, 16, 16],
+        #'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -93,11 +98,12 @@ EXPS = [
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
     }
+
 ]
 
-p_n_list = [0, .025, .05, 0.075, .1]
+pct_list = [0, 5, 10, 15, 20]
 
-def test_arch(signals, nn_params, model_params, p_n, device):
+def test_arch(signals, nn_params, model_params, pct, device):
 
     loss = np.zeros(signals['N_graphs'])
     acc = np.zeros(signals['N_graphs'])
@@ -108,20 +114,27 @@ def test_arch(signals, nn_params, model_params, p_n, device):
 
     for i in range(signals['N_graphs']):
 
-        G = datasets.create_graph(signals['g_params'])
+        Ga, Gb = datasets.perturbated_graphs(signals['g_params'],
+                                             creat=pct, dest=pct,
+                                             pct=True, perm=signals['perm']
+                                            )
+
+        #G = datasets.create_graph(signals['g_params'])
 
         # Define the data model
-        data = datasets.SourcelocSynthetic(G,
+        data = datasets.SourcelocSynthetic(Ga,
                                             signals['N_samples'],
                                             min_l=signals['min_l'],
                                             max_l=signals['max_l'],
                                             median=signals['median'])
         #data.to_unit_norm()
-        data.add_noise(p_n, test_only=True)
+        #data.add_noise(p_n, test_only=True)
+        #data.plot_train_signals([0,1], False, True)
+        #data.print_data_summary()
         data.to_tensor()
         data.to(device)
 
-        G.compute_laplacian('normalized')
+        #G.compute_laplacian('normalized')
         if "MLP" in nn_params['name']:
             archit = MLP(nn_params['M'],
                         nn_params['bias_mlp'],
@@ -129,7 +142,7 @@ def test_arch(signals, nn_params, model_params, p_n, device):
                         ARCH_INFO
                         )
         else:
-            archit = GCNN(datasets.norm_graph(G.W.todense()),
+            archit = GCNN(datasets.norm_graph(Gb.W.todense()),
                         nn_params['gf_type'],
                         nn_params['F'],
                         nn_params['K'],
@@ -180,16 +193,17 @@ if __name__ == '__main__':
 
     results = {}
     for exp in EXPS:
-
+        #if "Classic" not in exp['name']:
+        #    continue
         print("***************************")
         print("Starting " + exp['name'])
         results[exp['name']] = exp.copy()
         del results[exp['name']]['nonlin'] # Not possible to be saved in json format
         results_exp = {}
-        for p_n in p_n_list:
+        for pct in pct_list:
             print("***************************")
-            print("Starting with p_n: ", str(p_n))
-            results_exp[p_n] = test_arch(signals, exp, model_params, p_n, device)
+            print("Starting with pct: ", str(pct))
+            results_exp[pct] = test_arch(signals, exp, model_params, pct, device)
 
         results[exp['name']]["results"] = results_exp
 

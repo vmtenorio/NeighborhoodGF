@@ -20,18 +20,24 @@ ARCH_INFO = False
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 signals = {}
-signals['N_samples'] = 2000
-signals['N_graphs'] = 25
-signals['min_l'] = 10
-signals['max_l'] = 25
+signals['N_samples'] = 4000
+signals['N_graphs'] = 10
+signals['pos_value'] = .15
+signals['neg_value'] = -0.15
+signals['diffusion'] = 5
 signals['median'] = True
+signals['perm'] = True
 
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
-G_params['N'] = N = 100
-G_params['k'] = k = 5
+G_params['N'] = N = 256
+G_params['k'] = k = 4
 G_params['p'] = 0.8
+G_params['q'] = [[0, 0.0075, 0, 0.0],
+                 [0.0075, 0, 0.004, 0.0025],
+                 [0, 0.004, 0, 0.005],
+                 [0, 0.0025, 0.005, 0]]
 G_params['q'] = 0.2
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
@@ -46,13 +52,14 @@ model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
 model_params['max_non_dec'] = 15
+model_params['min_es'] = 40
 model_params['verbose'] = VERB
 
 EXPS = [
     {
         'name': "NeighborhoodGF",
         'gf_type': "NeighborhoodGF",
-        'F': [1, 2, 4, 8, 16, 16],
+        'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -64,7 +71,7 @@ EXPS = [
     {
         'name': "NeighborhoodGF-Binarization",
         'gf_type': "NeighborhoodGFType2",
-        'F': [1, 2, 4, 8, 16, 16],
+        'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -76,7 +83,7 @@ EXPS = [
     {
         'name': "ClassicGF",
         'gf_type': "ClassicGF",
-        'F': [1, 2, 4, 8, 16, 16],
+        'F': [1, 32, 32],
         'K': 3,
         'bias_gf': True,
         'M': [16, k],
@@ -87,17 +94,17 @@ EXPS = [
     },
     {
         'name': "BasicMLP",
-        'M': [N, 128, 64, 64, 32, k],
-        'bias_mlp': False,
+        'M': [N, 256, 128, 64, 32, k],
+        'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
     }
 ]
 
-p_n_list = [0, .025, .05, 0.075, .1]
+prob_list = [0, 5, 10, 15, 20]
 
-def test_arch(signals, nn_params, model_params, p_n, device):
+def test_arch(signals, nn_params, model_params, prob, device):
 
     loss = np.zeros(signals['N_graphs'])
     acc = np.zeros(signals['N_graphs'])
@@ -108,20 +115,25 @@ def test_arch(signals, nn_params, model_params, p_n, device):
 
     for i in range(signals['N_graphs']):
 
-        G = datasets.create_graph(signals['g_params'])
+        Ga, Gb = datasets.perturbated_graphs(signals['g_params'],
+                                             creat=prob, dest=prob,
+                                             pct=True, perm=signals['perm']
+                                            )
 
         # Define the data model
-        data = datasets.SourcelocSynthetic(G,
+        data = datasets.SourcelocSyntheticGaussian(Ga, # Using the first graph to create the signal
                                             signals['N_samples'],
-                                            min_l=signals['min_l'],
-                                            max_l=signals['max_l'],
-                                            median=signals['median'])
+                                            pos_value=signals['pos_value'],
+                                            neg_value=signals['neg_value'],
+                                            diffusion=signals['diffusion'],
+                                            median=signals['median']
+                                          )
         #data.to_unit_norm()
-        data.add_noise(p_n, test_only=True)
+        #data.add_noise(p_n, test_only=True)
         data.to_tensor()
         data.to(device)
 
-        G.compute_laplacian('normalized')
+        #G.compute_laplacian('normalized')
         if "MLP" in nn_params['name']:
             archit = MLP(nn_params['M'],
                         nn_params['bias_mlp'],
@@ -129,7 +141,7 @@ def test_arch(signals, nn_params, model_params, p_n, device):
                         ARCH_INFO
                         )
         else:
-            archit = GCNN(datasets.norm_graph(G.W.todense()),
+            archit = GCNN(datasets.norm_graph(Gb.W.todense()),
                         nn_params['gf_type'],
                         nn_params['F'],
                         nn_params['K'],
@@ -186,10 +198,10 @@ if __name__ == '__main__':
         results[exp['name']] = exp.copy()
         del results[exp['name']]['nonlin'] # Not possible to be saved in json format
         results_exp = {}
-        for p_n in p_n_list:
+        for prob in prob_list:
             print("***************************")
-            print("Starting with p_n: ", str(p_n))
-            results_exp[p_n] = test_arch(signals, exp, model_params, p_n, device)
+            print("Starting with prob: ", str(prob))
+            results_exp[prob] = test_arch(signals, exp, model_params, prob, device)
 
         results[exp['name']]["results"] = results_exp
 
