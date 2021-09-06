@@ -244,7 +244,7 @@ class ModelSamuel:
     def test(self, x):
         x_hat = self.arch(self.arch.input).squeeze()
         node_err = self.loss(x_hat, Tensor(x)).detach().numpy()
-        x_hat = x_hat.detach().numpy()
+        #x_hat = x_hat.detach().numpy()
         err = np.sum(node_err)/np.linalg.norm(x)**2
         return np.median(node_err), err 
    

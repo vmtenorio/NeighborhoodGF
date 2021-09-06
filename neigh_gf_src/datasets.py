@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pygsp.graphs import Graph, StochasticBlockModel, ErdosRenyi, BarabasiAlbert
 from torch import Tensor, LongTensor
+from scipy.sparse.csgraph import shortest_path
 
 # Graph Type Constants
 SBM = 1
@@ -317,17 +318,20 @@ class DenoisingSparse(BaseGraphDataset):
     Class for the Denoising problem, where we try to recover the original signal
     from a noisy version of it
     '''
-    def __init__(self, G, n_samples, L, n_delts, p_n, x_type="random", min_d=-1,
-                 max_d=1, median=True, neg_coeffs=False, test_only=False):
+    def __init__(self, G, n_samples, L, n_delts, p_n, x_type="random", ftype="classic",
+                min_d=-1, max_d=1, median=True, neg_coeffs=False, test_only=False):
 
         assert x_type in ["random", "deltas"], \
             'Only "random" input or an sparse signal ("deltas") allowed'
+        assert ftype in ["classic", "neighbours"], \
+            'Filter type must be either classic or neighbours'
 
         super(DenoisingSparse, self).__init__(G, n_samples, median)
 
         self.L = L
         self.n_delts = n_delts
         self.x_type = x_type
+        self.ftype = ftype
         self.min_d = min_d
         self.max_d = max_d
         self.neg_coeffs = neg_coeffs
@@ -345,7 +349,7 @@ class DenoisingSparse(BaseGraphDataset):
 
         self.add_noise_to_X(self.train_Y, p_n)
 
-        self.to_unit_norm(y_norm=True)
+        # self.to_unit_norm(y_norm=True)
 
     def create_samples(self, n_samples):
         if self.x_type == "deltas":
@@ -354,7 +358,7 @@ class DenoisingSparse(BaseGraphDataset):
         else:
             orig_signal = np.random.randn(n_samples, self.G.N)
 
-        self.random_diffusing_filter(self.L, self.neg_coeffs)
+        self.random_diffusing_filter(self.L, self.neg_coeffs, self.ftype)
 
         Y = self.H.dot(orig_signal.T).T
         if self.median:
@@ -396,7 +400,7 @@ class DenoisingSparse(BaseGraphDataset):
                 S[com_nodes[rand_index], i] = delta
         return S.T
 
-    def random_diffusing_filter(self, L, neg_coeffs):
+    def random_diffusing_filter(self, L, neg_coeffs, ftype="classic"):
         """
         Create a linear random diffusing filter with L random coefficients
         using the graphs shift operator from G.
@@ -409,9 +413,16 @@ class DenoisingSparse(BaseGraphDataset):
         else:
             h = np.random.rand(L)
         self.H = np.zeros(self.G.W.shape)
-        S = norm_graph(self.G.W.todense())
-        for l in range(h.size):
-            self.H += h[l]*np.linalg.matrix_power(S, l)
+        if ftype == "classic":
+            S = norm_graph(self.G.W.todense())
+            for l in range(h.size):
+                self.H += h[l]*np.linalg.matrix_power(S, l)
+        elif ftype == "neighbours":
+            distances = shortest_path(self.G.W.todense(), directed=False, unweighted=True)
+            for i, j in enumerate(h):
+                self.H += j*(distances == i).astype(int)
+        else:
+            print("WARNING: Unknown filter type. Try with 'classic' or 'neighbours'")
 
 
 class SourcelocSynthetic(BaseGraphDataset):

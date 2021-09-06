@@ -155,7 +155,7 @@ class GraphDeepDecoder(nn.Module):
 
         shape = [1, self.fts[0], self.nodes[0]]
         std = input_std/np.sqrt(shape[2])
-        self.input = Tensor(torch.zeros(shape)).data.normal_(0, std)
+        self.input = nn.Parameter(Tensor(torch.zeros(shape)).data.normal_(0, std), requires_grad=False)
 
     def add_layer(self, module):
         self.model.add_module(str(len(self.model) + 1), module)
