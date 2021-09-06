@@ -209,22 +209,48 @@ class ClassicGF(BaseGF):
 
 class BasicGNN(nn.Module):
 
-    def __init__(S, Fin, Fout):
+    def __init__(self, S, Fin, Fout, K=1, bias_gf=False):
+        super(BasicGNN, self).__init__()
         self.S = S
         self.N = S.shape[0]
         self.Fin = Fin
         self.Fout = Fout
+        self.K = K
 
-        self.weights = nn.Parameter(torch.Tensor(self.Fin*self.Fout))
+        self.weights = nn.Parameter(torch.Tensor(self.Fin, self.Fout))
         stdv = 1. / math.sqrt(self.Fin * self.Fout)
         self.weights.data.uniform_(-stdv, stdv)
 
+        if K > 1:
+            self.h = nn.Parameter(torch.Tensor(self.K), requires_grad=False)
+            self.H = nn.Parameter(self.build_filter(), requires_grad=False)
+        else:
+            self.H = nn.Parameter(self.S, requires_grad=False)
+
+    def build_filter(self):
+        H = self.h[0] * torch.eye(self.N)
+        S = torch.from_numpy(self.S)
+        matpower = torch.from_numpy(self.S)
+
+        for k in range(1, self.K):
+            matpower = matpower @ S
+            H += self.h[k] * matpower
+        return H
+
     def forward(self, x):
-        xN, xF = x.shape
+        T, xF, xN = x.shape
         assert xN == self.N
         assert xF == self.Fin
 
-        return self.S @ x @ self.weights
+        return self.weights.T @ x @ self.H.T
+
+class NeighborhoodGFGNN(BasicGNN):
+    def build_filter(self):
+        H = self.h[0] * torch.eye(self.N)
+        distances = shortest_path(self.S, directed=False, unweighted=True)
+        for k in range(1, self.K):
+            H += self.h[k] * torch.from_numpy(norm_graph((self.distances == k).astype(int)))
+        return H
 
 
 class FixedFilter(nn.Module):
@@ -235,3 +261,4 @@ class FixedFilter(nn.Module):
     def forward(self, input):
         assert input.shape[0] == 1, ERR_WRONG_INPUT_SIZE
         return input.matmul(self.H_T)
+

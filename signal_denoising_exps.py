@@ -4,6 +4,7 @@ import numpy as np
 import os
 import json
 import torch
+from scipy.sparse.csgraph import shortest_path
 import sys
 sys.path.append('..')
 
@@ -26,18 +27,13 @@ signals['L_filter'] = 6
 signals['noise'] = 0
 signals['test_only'] = False
 
-signals['median'] = True
-
 # Graph parameters
 G_params = {}
 G_params['type'] = datasets.SBM
 G_params['N'] = N = 256
 G_params['k'] = k = 4
-G_params['p'] = 0.3
-G_params['q'] = [[0, 0.0075, 0, 0.0],
-                 [0.0075, 0, 0.004, 0.0025],
-                 [0, 0.004, 0, 0.005],
-                 [0, 0.0025, 0.005, 0]]
+G_params['p'] = 0.8
+G_params['q'] = 0.1
 G_params['type_z'] = datasets.RAND
 signals['g_params'] = G_params
 
@@ -50,17 +46,17 @@ model_params['loss_func'] = nn.MSELoss()
 model_params['epochs'] = 200
 model_params['batch_size'] = 50
 model_params['eval_freq'] = 4
-model_params['max_non_dec'] = 10
+model_params['max_non_dec'] = 200
 model_params['es_loss_type'] = "train"
 model_params['verbose'] = VERB
 
 EXPS = [
     {
-        'name': "NeighborhoodGF",
-        'gf_type': "NeighborhoodGF",
-        'F': [1, 2, 4, 8, 4, 2, 1],
+        'name': "BasicGNN-ClassicGF",
+        'gf_type': "BasicGNN",
+        'F': [1, 32, 128, 32, 1],
         'K': 3,
-        'bias_gf': True,
+        'bias_gf': False,
         'M': [],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
@@ -68,11 +64,23 @@ EXPS = [
         'arch_info': ARCH_INFO
     },
     {
-        'name': "NeighborhoodGF-Binarization",
-        'gf_type': "NeighborhoodGFType2",
-        'F': [1, 2, 4, 8, 4, 2, 1],
+        'name': "BasicGNN-NeighborhoodGF",
+        'gf_type': "BasicGNN",
+        'F': [1, 32, 128, 32, 1],
         'K': 3,
-        'bias_gf': True,
+        'bias_gf': False,
+        'M': [],
+        'bias_mlp': True,
+        'nonlin': nn.Tanh,
+        'nonlin_s': "tanh", # For logging purposes
+        'arch_info': ARCH_INFO
+    },
+    {
+        'name': "NeighborhoodGF",
+        'gf_type': "NeighborhoodGF",
+        'F': [1, 4, 8, 4, 1],
+        'K': 3,
+        'bias_gf': False,
         'M': [],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
@@ -82,20 +90,73 @@ EXPS = [
     {
         'name': "ClassicGF",
         'gf_type': "ClassicGF",
-        'F': [1, 2, 4, 8, 4, 2, 1],
+        'F': [1, 4, 8, 4, 1],
         'K': 3,
-        'bias_gf': True,
+        'bias_gf': False,
         'M': [],
         'bias_mlp': True,
         'nonlin': nn.Tanh,
         'nonlin_s': "tanh", # For logging purposes
         'arch_info': ARCH_INFO
+    },
+    {
+        'name': "BasicMLP",
+        'M': [N, 128, 64, 64, 32, k],
+        'bias_mlp': False,
+        'nonlin': nn.Tanh,
+        'nonlin_s': "tanh", # For logging purposes
+        'arch_info': ARCH_INFO
     }
 ]
+"""
+{
+    'name': "GraphDecoder",
+    'gf_type': "Classic",
+    'F': 150,
+    'K': 3,
+    'nonlin': nn.Tanh,
+    'nonlin_s': "tanh", # For logging purposes
+},
+{
+    'name': "GraphDeepDecoder",
+    'gf_type': "Classic",
+    'F': [1, 32, 128, 32, 1],
+    'K': 3,
+    'nonlin': nn.Tanh,
+    'nonlin_s': "tanh", # For logging purposes
+},
+{
+    'name': "GraphDecoder",
+    'gf_type': "Neighborhood",
+    'F': 150,
+    'K': 3,
+    'nonlin': nn.Tanh,
+    'nonlin_s': "tanh", # For logging purposes
+},
+{
+    'name': "GraphDeepDecoder",
+    'gf_type': "Neighborhood",
+    'F': [1, 32, 128, 32, 1],
+    'K': 3,
+    'nonlin': nn.Tanh,
+    'nonlin_s': "tanh", # For logging purposes
+},
+"""
+
+def build_filter(S, K, ftype="classic"):
+    H = np.zeros(N,N)
+    if ftype == "classic":
+        S = norm_graph(self.G.W.todense())
+        for l in range(K):
+            H += np.linalg.matrix_power(S, l)
+    else:
+        distances = shortest_path(self.G.W.todense(), directed=False, unweighted=True)
+        for i in range(K):
+            H += (distances == i).astype(int)
 
 p_n_list = [0, .025, .05, 0.075, .1]
 
-def test_arch(signals, nn_params, model_params, p_n, device):
+def test_arch(signals, nn_params, model_params, p_n, device, input_ftype):
 
     mse = np.zeros(signals['N_graphs'])
     mean_err = np.zeros(signals['N_graphs'])
@@ -114,22 +175,30 @@ def test_arch(signals, nn_params, model_params, p_n, device):
                                         signals['N_samples'],
                                         signals['L_filter'], signals['g_params']['k'],  # k is n_delts
                                         p_n,
-                                        median=signals['median'])
+                                        median=signals['median'],
+                                        ftype=input_ftype)
         #data.to_unit_norm()
         data.to_tensor()
         data.to(device)
 
-        G.compute_laplacian('normalized')
-        archit = GCNN(datasets.norm_graph(G.W.todense()),
-                      nn_params['gf_type'],
-                      nn_params['F'],
-                      nn_params['K'],
-                      nn_params['bias_gf'],
-                      nn_params['M'],
-                      nn_params['bias_mlp'],
-                      nn_params['nonlin'],
-                      ARCH_INFO
-                    )
+        #G.compute_laplacian('normalized')
+        if "MLP" in nn_params['name']:
+            archit = MLP(nn_params['M'],
+                        nn_params['bias_mlp'],
+                        nn_params['nonlin'],
+                        ARCH_INFO
+                        )
+        else:
+            archit = GCNN(datasets.norm_graph(G.W.todense()),
+                        nn_params['gf_type'],
+                        nn_params['F'],
+                        nn_params['K'],
+                        nn_params['bias_gf'],
+                        nn_params['M'],
+                        nn_params['bias_mlp'],
+                        nn_params['nonlin'],
+                        ARCH_INFO
+                        )
 
         archit.to(device)
 
@@ -172,13 +241,22 @@ if __name__ == '__main__':
         print("Starting " + exp['name'])
         results[exp['name']] = exp.copy()
         del results[exp['name']]['nonlin'] # Not possible to be saved in json format
-        results_exp = {}
-        for p_n in p_n_list:
-            print("***************************")
-            print("Starting with p_n: ", str(p_n))
-            results_exp[p_n] = test_arch(signals, exp, model_params, p_n, device)
+        for iftype in ["classic", "neighbours"]:
+            results_exp = {}
+            for p_n in p_n_list:
+                print("***************************")
+                print("Starting with p_n: ", str(p_n))
+                results_exp[p_n] = test_arch(signals, exp, model_params, p_n, device, iftype)
 
-        results[exp['name']]["results"] = results_exp
+            results[exp['name']][iftype] = results_exp
 
     save_results(time.strftime("%Y%m%d-%H%M") + ".json", results)
+
+
+
+
+
+
+
+
 
