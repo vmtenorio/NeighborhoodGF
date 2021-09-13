@@ -231,11 +231,15 @@ class BaseGraphDataset:
 
     def to_tensor(self, n_chans=1):
         N = self.train_X.shape[1]
-        self.train_X = Tensor(self.train_X).view([self.n_train, n_chans, N])
+        if n_chans != 0:
+            shape = [-1, n_chans, N]
+        else:
+            shape = [-1, N]
+        self.train_X = Tensor(self.train_X).view(shape)
         self.train_Y = Tensor(self.train_Y).view([self.n_train, N])
-        self.val_X = Tensor(self.val_X).view([self.n_val, n_chans, N])
+        self.val_X = Tensor(self.val_X).view(shape)
         self.val_Y = Tensor(self.val_Y).view([self.n_val, N])
-        self.test_X = Tensor(self.test_X).view([self.n_test, n_chans, N])
+        self.test_X = Tensor(self.test_X).view(shape)
         self.test_Y = Tensor(self.test_Y).view([self.n_test, N])
 
     def to_unit_norm(self, y_norm=False):
@@ -277,33 +281,15 @@ class BaseGraphDataset:
             return
         self.test_X = self.add_noise_to_X(self.test_X, p_n)
 
-        if test_only:
-            return
-        self.val_X = self.add_noise_to_X(self.val_X, p_n)
-        self.train_X = self.add_noise_to_X(self.train_X, p_n)
+        if not test_only:
+            self.val_X = self.add_noise_to_X(self.val_X, p_n)
+            self.train_X = self.add_noise_to_X(self.train_X, p_n)
 
     def add_noise_to_X(self, X, p_n):
         p_x = np.sum(X**2, axis=1)
         sigma = np.sqrt(p_n * p_x / X.shape[1])
         noise = (np.random.randn(X.shape[0], X.shape[1]).T * sigma).T
         return X + noise
-
-    def create_samples_S(self, delts, min_d, max_d):
-        train_deltas = self.delta_values(self.G, self.n_train, delts, min_d, max_d)
-        val_deltas = self.delta_values(self.G, self.n_val, delts, min_d, max_d)
-        test_deltas = self.delta_values(self.G, self.n_test, delts, min_d, max_d)
-        self.train_S = self.sparse_S(self.G, train_deltas)
-        self.val_S = self.sparse_S(self.G, val_deltas)
-        self.test_S = self.sparse_S(self.G, test_deltas)
-
-    def create_samples_X(self):
-        self.train_X = self.H.dot(self.train_S.T).T
-        self.val_X = self.H.dot(self.val_S.T).T
-        self.test_X = self.H.dot(self.test_S.T).T
-        if self.median:
-            self.train_X = self.median_neighbours_nodes(self.train_X, self.G)
-            self.val_X = self.median_neighbours_nodes(self.val_X, self.G)
-            self.test_X = self.median_neighbours_nodes(self.test_X, self.G)
 
     def to(self, device):
         self.train_X = self.train_X.to(device)
@@ -313,52 +299,46 @@ class BaseGraphDataset:
         self.test_X = self.test_X.to(device)
         self.test_Y = self.test_Y.to(device)
 
-class DenoisingSparse(BaseGraphDataset):
+class DenoisingBase(BaseGraphDataset):
     '''
-    Class for the Denoising problem, where we try to recover the original signal
-    from a noisy version of it
+    Base class for the signal Denoising problem, where we try to recover the
+    original signal from a noisy version of it. This class should not be used,
+    use instead the child classes DenoisingSparse or DenoisingWhite
     '''
-    def __init__(self, G, n_samples, L, n_delts, p_n, x_type="random", ftype="classic",
-                min_d=-1, max_d=1, median=True, neg_coeffs=False, test_only=False):
+    def __init__(self, G, n_samples, p_n, H=None, ftype="classic",
+                median=True, neg_coeffs=False, L=5):
 
-        assert x_type in ["random", "deltas"], \
-            'Only "random" input or an sparse signal ("deltas") allowed'
         assert ftype in ["classic", "neighbours"], \
             'Filter type must be either classic or neighbours'
 
-        super(DenoisingSparse, self).__init__(G, n_samples, median)
+        super(DenoisingBase, self).__init__(G, n_samples, median)
 
-        self.L = L
-        self.n_delts = n_delts
-        self.x_type = x_type
-        self.ftype = ftype
-        self.min_d = min_d
-        self.max_d = max_d
-        self.neg_coeffs = neg_coeffs
-
-        assert self.n_train > self.n_val and self.n_train > self.n_test, \
+        assert self.n_train >= self.n_val and self.n_train >= self.n_test, \
                 "Need more training samples than validation and test"
 
+        if H is not None:
+            self.H = H
+        else:
+            self.random_diffusing_filter(L, neg_coeffs, ftype)
+
+        # Validation and test datasets are a subset of the training dataset
+        # (we cannot denoise a signal for which we have not trained for)
         self.train_X, self.train_Y = self.create_samples(self.n_train)
         idxs = np.random.permutation(self.n_train)
-        val_idx = idxs[:self.n_val]
-        test_idx = idxs[-self.n_test:]
+        self.val_idx = idxs[:self.n_val]
+        self.test_idx = idxs[-self.n_test:]
 
-        self.val_X, self.val_Y = self.train_X[val_idx].copy(), self.train_Y[val_idx].copy()
-        self.test_X, self.test_Y = self.train_X[test_idx].copy(), self.train_Y[test_idx].copy()
+        self.val_X, self.val_Y = self.train_X[self.val_idx].copy(),\
+                                    self.train_Y[self.val_idx].copy()
+        self.test_X, self.test_Y = self.train_X[self.test_idx].copy(),\
+                                    self.train_Y[self.test_idx].copy()
 
-        self.add_noise_to_X(self.train_Y, p_n)
+        self.train_Y = self.add_noise_to_X(self.train_Y, p_n)
 
         # self.to_unit_norm(y_norm=True)
 
     def create_samples(self, n_samples):
-        if self.x_type == "deltas":
-            deltas = self.delta_values(self.G, n_samples, self.n_delts, self.min_d, self.max_d)
-            orig_signal = self.sparse_S(self.G, deltas)
-        else:
-            orig_signal = np.random.randn(n_samples, self.G.N)
-
-        self.random_diffusing_filter(self.L, self.neg_coeffs, self.ftype)
+        orig_signal = self.base_signal(n_samples)
 
         Y = self.H.dot(orig_signal.T).T
         if self.median:
@@ -367,38 +347,6 @@ class DenoisingSparse(BaseGraphDataset):
         X = np.random.randn(n_samples, self.G.N)
 
         return X, Y
-
-    def delta_values(self, G, n_samp, n_deltas, min_delta, max_delta):
-        n_comms = G.info['comm_sizes'].size
-        if n_comms > 1:
-            step = (max_delta-min_delta)/(n_comms-1)
-        else:
-            step = (max_delta-min_delta)/(n_deltas-1)
-        ds_per_comm = np.ceil(n_deltas/n_comms).astype(int)
-        delta_means = np.arange(min_delta, max_delta+0.1, step)
-        delta_means = np.tile(delta_means, ds_per_comm)[:n_deltas]
-        delt_val = np.zeros((n_deltas, n_samp))
-        for i in range(n_samp):
-            delt_val[:, i] = np.random.randn(n_deltas)*step/4 + delta_means
-        return delt_val
-
-    def sparse_S(self, G, delta_values):
-        """
-        Create random sparse signal s composed of different deltas placed in the
-        different communities of the graph. If the graph is an ER, then deltas
-        are just placed on random nodes
-        """
-        n_samp = delta_values.shape[1]
-        S = np.zeros((G.N, n_samp))
-        # Randomly assign delta value to comm nodes
-        for i in range(n_samp):
-            for j in range(delta_values.shape[0]):
-                delta = delta_values[j, i]
-                com_j = j % G.info['comm_sizes'].size
-                com_nodes, = np.asarray(G.info['node_com'] == com_j).nonzero()
-                rand_index = np.random.randint(0, G.info['comm_sizes'][com_j])
-                S[com_nodes[rand_index], i] = delta
-        return S.T
 
     def random_diffusing_filter(self, L, neg_coeffs, ftype="classic"):
         """
@@ -423,6 +371,73 @@ class DenoisingSparse(BaseGraphDataset):
                 self.H += j*(distances == i).astype(int)
         else:
             print("WARNING: Unknown filter type. Try with 'classic' or 'neighbours'")
+    
+    def base_signal(self):
+        raise NotImplementedError("Please, use one of the child classes\
+                                   DenoisingSparse or DenoisingWhite")
+
+
+class DenoisingSparse(DenoisingBase):
+    '''
+    Base class for the Denoising problem, where we try to recover the original
+    signal from a noisy version of it. The signal is generated diffusing
+    deltas over the graph using a graph filter
+    '''
+    def __init__(self, G, n_samples, n_delts, p_n, H=None, ftype="classic",
+                min_d=-1, max_d=1, median=True, neg_coeffs=False, L=5):
+        
+        self.n_delts = n_delts
+        self.min_d = min_d
+        self.max_d = max_d
+
+        super(DenoisingSparse, self).__init__(G, n_samples, p_n, H, ftype,
+                                              median, neg_coeffs, L)
+
+    def delta_values(self, n_samp):
+        n_comms = self.G.info['comm_sizes'].size
+        if n_comms > 1:
+            step = (self.max_d-self.min_d)/(n_comms-1)
+        else:
+            step = (self.max_d-self.min_d)/(self.n_delts-1)
+        ds_per_comm = np.ceil(self.n_delts/n_comms).astype(int)
+        delta_means = np.arange(self.min_d, self.max_d+0.1, step)
+        delta_means = np.tile(delta_means, ds_per_comm)[:self.n_delts]
+        self.delt_val = np.zeros((self.n_delts, n_samp))
+        for i in range(n_samp):
+            self.delt_val[:, i] = np.random.randn(self.n_delts)*step/4 + delta_means
+
+    def base_signal(self, n_samp):
+        """
+        Create random sparse signal s composed of different deltas placed in the
+        different communities of the graph. If the graph is an ER, then deltas
+        are just placed on random nodes
+        """
+        delta_val = self.delta_values(n_samp)
+        S = np.zeros((self.G.N, n_samp))
+        # Randomly assign delta value to comm nodes
+        for i in range(n_samp):
+            for j in range(delta_val.shape[0]):
+                delta = delta_val[j, i]
+                com_j = j % self.G.info['comm_sizes'].size
+                com_nodes, = np.asarray(self.G.info['node_com'] == com_j).nonzero()
+                rand_index = np.random.randint(0, self.G.info['comm_sizes'][com_j])
+                S[com_nodes[rand_index], i] = delta
+        return S.T
+
+
+class DenoisingWhite(DenoisingBase):
+    '''
+    Class for the Denoising problem, where we try to recover the original signal
+    from a noisy version of it. The signal is generated diffusing either deltas or
+    a white signal over the graph using a graph filter
+    '''
+    def __init__(self, G, n_samples, p_n, H=None, ftype="classic",
+                 median=True, neg_coeffs=False, L=5):
+        super(DenoisingWhite, self).__init__(G, n_samples, p_n, H, ftype,
+                                              median, neg_coeffs, L)
+
+    def base_signal(self, n_samp):
+        return np.random.randn(n_samp, self.G.N)
 
 
 class SourcelocSynthetic(BaseGraphDataset):
