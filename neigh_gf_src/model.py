@@ -193,16 +193,18 @@ class ModelDenoising(Model):
             loss_func=loss_func, epochs=epochs, eval_freq=eval_freq,
             verbose=verbose, opt=opt)
 
-    def fit(self, signal, x=None, reduce_err=True):
+    def fit(self, x_n, x=None, reduce_err=True):
+        """
         if x is not None:
             x = Tensor(x)
         x_n = Tensor(signal)
+        """
 
         best_err = 1000000
         best_net = None
         best_epoch = 0
-        train_err = np.zeros((self.epochs, signal.size))
-        val_err = np.zeros((self.epochs, signal.size))
+        train_err = np.zeros((self.epochs, x.shape[0]))
+        val_err = np.zeros((self.epochs, x.shape[0]))
         for i in range(1, self.epochs+1):
             t_start = time.time()
             self.arch.zero_grad()
@@ -221,11 +223,11 @@ class ModelDenoising(Model):
             if x is not None:
                 with no_grad():
                     eval_loss = self.loss(x_hat, x)
-                    val_err[i-1, :] = eval_loss.detach().numpy()
+                    val_err[i-1, :] = eval_loss.detach().to('cpu').numpy()
 
             loss_red.backward()
             self.optim.step()
-            train_err[i-1, :] = loss.detach().numpy()
+            train_err[i-1, :] = loss.detach().to('cpu').numpy()
             t = time.time()-t_start
 
             if self.verbose and i % self.eval_freq == 0:
@@ -242,7 +244,7 @@ class ModelDenoising(Model):
 
     def test(self, x):
         x_hat = self.arch(self.arch.input).squeeze()
-        node_err = self.loss(x_hat, Tensor(x)).detach().numpy()
+        node_err = self.loss(x_hat, Tensor(x)).detach().to('cpu').numpy()
         #x_hat = x_hat.detach().numpy()
         err = np.sum(node_err)/np.linalg.norm(x)**2
         return np.median(node_err), err 

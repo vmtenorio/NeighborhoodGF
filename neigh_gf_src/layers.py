@@ -7,11 +7,8 @@ from scipy.sparse.csgraph import shortest_path
 import numpy as np
 
 
-DEBUG = False
-
 # Error messages
 ERR_WRONG_INPUT_SIZE = 'Number of input samples must be 1'
-
 
 class GraphFilter(nn.Module):
     def __init__(self,
@@ -135,7 +132,6 @@ class BaseGF(nn.Module):
             self.bias.data.uniform_(-stdv, stdv)
 
         self.build_filter()
-        #torch.set_printoptions(threshold=100)
 
     def forward(self, x):
         # x shape T x N x Fin
@@ -256,7 +252,7 @@ class NeighborhoodGFGNN(BasicGNN):
 class FixedFilter(nn.Module):
     def __init__(self, H):
         nn.Module.__init__(self)
-        self.H_T = torch.Tensor(H).t()
+        self.H_T = nn.Parameter(torch.Tensor(H).t(), requires_grad=False)
 
     def forward(self, input):
         assert input.shape[0] == 1, ERR_WRONG_INPUT_SIZE

@@ -1,13 +1,28 @@
 import math
 import numpy as np
+from enum import Enum
 
 import torch.nn as nn
 import torch
-from torch import Tensor, eye, manual_seed, nn, no_grad, optim
+from torch import Tensor, nn
 from . import layers
 
+from scipy import sparse
 
-class GCNN(nn.Module):
+from torch_geometric.nn import GCNConv, SGConv, GATConv
+from torch_geometric.utils import from_scipy_sparse_matrix
+
+
+class GCNN_GF(nn.Module):
+    """
+    In this type of network, each layer in the output is calculated as
+
+    X^{(\ell+1)}_j = \sigma(\sum_{i=1}^F^{(\ell)} H_{ij} X^{(\ell)}_i)
+
+    Where $H_{ij}$ is a graph filter with learnable coefficients.
+    As such, there are F^{(\ell)}*F^{(\ell+1)}*K learnable parameters
+    per layer, where K is the order of the filter used.
+    """
     def __init__(self,
                 S,
                 gf_type,    # Type of graph filter to use
@@ -16,9 +31,9 @@ class GCNN(nn.Module):
                 bias_gf,    # Whether or not to use Bias in the GF layers
                 M,          # Neurons in each fully connected layer (list)
                 bias_mlp,   # Whether or not to use Bias in the FC layers
-                nonlin,     # Non linearity function
+                nonlin,     # Non linear function
                 arch_info): # Print architecture information
-        super(GCNN, self).__init__()
+        super(GCNN_GF, self).__init__()
         # In python 3
         # super()
 
@@ -95,7 +110,6 @@ class GCNN(nn.Module):
 
         # return y.squeeze(2)
 
-        # y = y.reshape([T, 1, self.N*self.F[-1]]) # Por que esta ahi el 1
         y = y.reshape([T, self.N*self.F[-1]])
 
         return self.FCL(y)
@@ -109,16 +123,18 @@ class GraphDecoder(nn.Module):
     """
     def __init__(self, features, H, scale_std=0.01):
         """
-        The arguments are:
-        - features: the number of features
-        - H: fixed graph filter
-        - scale_std: scale the std of the learnable weights initialization
+        Arguments
+        ---------
+            - features: the number of features
+            - H: fixed graph filter
+            - scale_std: scale the std of the learnable weights initialization
         """
         super().__init__()
         N = H.shape[0]
-        self.input = Tensor(H).view([1, N, N])
-        self.v = torch.ones(features)/math.sqrt(features)
-        self.v[math.ceil(features/2):] *= -1
+        self.input = nn.Parameter(Tensor(H).view([1, N, N]), requires_grad=False)
+        v = torch.ones(features)/math.sqrt(features)
+        v[math.ceil(features/2):] *= -1
+        self.v = nn.Parameter(v, requires_grad=False)
         self.conv = nn.Conv1d(N, features, kernel_size=1,
                               bias=False)
         std = scale_std/math.sqrt(N)
@@ -132,20 +148,24 @@ class GraphDecoder(nn.Module):
         return sum(p.numel() for p in self.model.parameters()
                    if p.requires_grad)
     
-    
-class GraphDeepDecoder(nn.Module):
+class GCNN(nn.Module):
+    """
+    Message Passing Graph Neural Network that, instead of using the 
+    adjacency matrix, utilizes a graph filter to aggregate the information of
+    a bigger neighborhood in each layer.
+
+    X^{(\ell+1)} = \sigma(H X^{(\ell)} \Theta^{(\ell)})
+    """
     def __init__(self,
-                 # Decoder args
-                 features, nodes, H,
+                 # Network args
+                 features, H,
                  # Activation functions
                  act_fn=nn.ReLU(), last_act_fn=None,
                  input_std=0.01, w_std=0.01):
-        assert len(features) == len(nodes), ERR_DIFF_N_LAYERS
 
-        super(GraphDeepDecoder, self).__init__()
+        super(GCNN, self).__init__()
         self.model = nn.Sequential()
         self.fts = features
-        self.nodes = nodes
         self.H = H
         self.kernel_size = 1
         self.act_fn = act_fn
@@ -153,7 +173,8 @@ class GraphDeepDecoder(nn.Module):
         self.w_std = w_std/np.sqrt(features)
         self.build_network()
 
-        shape = [1, self.fts[0], self.nodes[0]]
+        # Declare the input for the denoising problem
+        shape = [1, self.fts[0], self.H.shape[0]]
         std = input_std/np.sqrt(shape[2])
         self.input = nn.Parameter(Tensor(torch.zeros(shape)).data.normal_(0, std), requires_grad=False)
 
@@ -166,10 +187,10 @@ class GraphDeepDecoder(nn.Module):
                              bias=False)
             conv.weight.data.normal_(0, self.w_std[l])
             self.add_layer(conv)
-            self.add_layer(layers.FixedFilter(self.H))
 
             if l < (len(self.fts)-2):
                 # Not the last layer
+                self.add_layer(layers.FixedFilter(self.H))
                 if self.act_fn is not None:
                     self.add_layer(self.act_fn)
             else:
@@ -179,6 +200,11 @@ class GraphDeepDecoder(nn.Module):
         return self.model
 
     def forward(self, x):
+
+        n_samp, f_in, xN = x.shape
+        assert f_in == self.fts[0]
+        assert xN == self.H.shape[0]
+
         return self.model(x).squeeze()
 
     def count_params(self):
@@ -186,6 +212,17 @@ class GraphDeepDecoder(nn.Module):
                    if p.requires_grad)
 
 class MLP(nn.Module):
+    """
+    A simple torch Module for a Multilayer Perceptron network.
+
+    Parameters
+    ----------
+        - M: list with the number of neurons of each FC layer
+        - bias_mlp: whether or not to use bias
+        - nonlin: element-wise non-linear function to be applied after each layer
+        - arch_info: whether or not to print the information of the architecture
+    """
+
     def __init__(self,
                 M,          # Neurons in each fully connected layer (list)
                 bias_mlp,   # Whether or not to use Bias in the FC layers
@@ -239,3 +276,70 @@ class MLP(nn.Module):
 
         # Define the forward pass
         return self.FCL(x)
+
+
+class SOTAGraphNN(nn.Module):
+    """
+    Class implementing a GCNN using layers from SOTA architectures provided by
+    the library torch_geometric. Currently, there are:
+    - GCNConv - Kipf 2017
+    - SGCConv - Wu 2019. layer_params should contain the parameter K
+    - GATConv - Veličković 2017. layer_params should contain a list with the
+        number of attention heads for each layer
+
+    Arguments
+    ---------
+        - S: GSO to be used in the networks. It is expected as a numpy array, as it
+            is transformed to the appropiate format
+        - layer_params: the parameters of the layers to be implemented. It should
+            contain the name of the layer and further attributes depending on the
+            layer
+        - features: list with the number of features at each layer.
+        - nonlin: element-wise non-linear function to be applied after each layer-
+    """
+
+    def __init__(self, S, layer_params, features, nonlin=nn.ReLU()):
+        super(SOTAGraphNN, self).__init__()
+        self.S = S
+        edge_index, _ = from_scipy_sparse_matrix(sparse.csr_matrix(S))
+        self.edge_index = nn.Parameter(edge_index, requires_grad=False)
+
+        conv_layers = []
+        for i in range(1, len(features)):
+            conv_layers.append(self.conv_layer(features[i-1], features[i], layer_params, i))
+        self.conv_layers = torch.nn.ModuleList(conv_layers)
+        self.n_layers = len(conv_layers)
+        
+        self.nonlin = nonlin
+        
+        shape = [S.shape[0], features[0]]
+        std = .1/np.sqrt(shape[0])
+        input = torch.Tensor(torch.zeros(shape)).data.normal_(0, std)
+        self.input = nn.Parameter(input, requires_grad=False)
+
+    def conv_layer(self, in_feat, out_feat, params, i=None):
+        """
+        This method is used to create a new layer from the parameters inside layer_params
+        dictionary and the input and output features
+        """
+
+        layer = None
+        if params['name'] == "GCNConv":
+            layer = GCNConv(in_feat, out_feat)
+        elif params['name'] == "SGConv":
+            layer = SGConv(in_feat, out_feat, K=params['K'])
+        elif params['name'] == "GATConv":
+            if i > 0:
+                in_feat = in_feat*params['heads'][i-1]
+            layer = GATConv(in_feat, out_feat, heads=params['heads'][i])
+        else:
+            raise NotImplementedError("Layer type {} not found".format(params['name']))
+        return layer
+
+    def forward(self, x):
+        for i in range(self.n_layers):
+            x = self.conv_layers[i](x, self.edge_index)
+            if i < self.n_layers-1:
+                x = self.nonlin(x)
+        return x.squeeze()
+        
