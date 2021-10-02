@@ -10,7 +10,7 @@ sys.path.append('..')
 from neigh_gf_src.model import Model, ADAM
 
 from neigh_gf_src import datasets
-from neigh_gf_src.arch import GCNN
+from neigh_gf_src.arch import GCNN_GF
 
 # Parameters
 
@@ -120,7 +120,7 @@ def test_arch(signals, nn_params, model_params, k, device):
         data.to(device)
 
         G.compute_laplacian('normalized')
-        archit = GCNN(datasets.norm_graph(G.W.todense()),
+        archit = GCNN_GF(datasets.norm_graph(G.W.todense()),
                       nn_params['gf_type'],
                       nn_params['F'],
                       nn_params['K'],

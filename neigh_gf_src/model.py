@@ -2,7 +2,7 @@ from torch import optim, no_grad, nn, Tensor
 import copy
 import time
 import numpy as np
-import sys
+import math
 
 
 # Optimizer constans
@@ -11,14 +11,13 @@ ADAM = 0
 
 
 class Model:
-    # TODO: add support for more optimizers
     def __init__(self, arch,
                  learning_rate=0.1, decay_rate=0.99, loss_func=nn.MSELoss(),
                  epochs=50, batch_size=100, eval_freq=5, verbose=False,
-                 max_non_dec=10, opt=ADAM, es_loss_type="eval", min_es=0):
+                 max_non_dec=10, opt=ADAM, es_loss_type="val", min_es=0):
         assert opt in [SGD, ADAM], 'Unknown optimizer type'
-        assert es_loss_type in ["train", "eval"],\
-                'Early Stopping loss is either train or eval'
+        assert es_loss_type in ["train", "val"],\
+                'Early Stopping loss is either train or val'
         self.arch = arch
         self.loss = loss_func
         self.epochs = epochs
@@ -39,8 +38,18 @@ class Model:
         return sum(p.numel() for p in self.arch.parameters() if p.requires_grad)
 
     def fit(self, train_X, train_Y, val_X, val_Y):
-        n_samples = train_X.shape[0]
-        n_steps = int(n_samples/self.batch_size)
+        # The data could be:
+        # 1. N_samples x N_features x N_nodes
+        # 2. N_samples x N_nodes (just 1 feature)
+        # 3. N_nodes (1 feature and 1 sample)
+        # The two first cases are covered in the first branch of the if
+        if len(train_X.shape) > 1:
+            n_samples = train_X.shape[0]
+            n_steps = math.ceil(n_samples/self.batch_size)
+        else:
+            # In this case, there is just 1 sample
+            n_samples = 1
+            n_steps = 1
 
         best_err = 1000000
         best_net = None
@@ -52,21 +61,20 @@ class Model:
             for j in range(1, n_steps+1):
                 # Randomly select batches
                 idx = np.random.permutation(n_samples)[:self.batch_size]
-                batch_X = train_X[idx, :, :]
+                batch_X = train_X[idx, ...]
                 batch_Y = train_Y[idx, ...]
                 self.arch.zero_grad()
 
                 # Training step
                 predicted_Y = self.arch(batch_X)
                 training_loss = self.loss(predicted_Y, batch_Y)
-                # CHANGE!!!
+                
                 training_loss.backward()
                 self.optim.step()
 
             self.scheduler.step()
             train_err[i-1] = training_loss.detach().item()
             t = time.time()-t_start
-
 
             # Predict eval error
             with no_grad():
@@ -167,43 +175,36 @@ class LinearModel:
         return np.mean(err), np.median(err), mse.detach().numpy()
 
 
-class ModelSamuel:
+class ModelDenoising(Model):
+    """
+    A Model for the denoising problem. The training process is different,
+    as we receive a single graph signal, there are no mini-batchs and the
+    calculation of the loss is different than in the standard model
+    """
     def __init__(self, arch,
                  learning_rate=0.001, loss_func=nn.MSELoss(reduction='none'),
                  epochs=1000, eval_freq=100, verbose=False,
                  opt=ADAM):
-        assert opt in [SGD, ADAM], 'Unknown optimizer type'
-        self.arch = arch
-        self.loss = loss_func
-        self.epochs = epochs
-        self.eval_freq = eval_freq
-        self.verbose = verbose
-        if opt == ADAM:
-            self.optim = optim.Adam(self.arch.parameters(), lr=learning_rate)
-        else:
-            self.optim = optim.SGD(self.arch.parameters(), lr=learning_rate)
+        
+        assert hasattr(arch, "input"),\
+            "Architecture needs to contain the input to the network"
+        
+        super(ModelDenoising, self).__init__(arch, learning_rate=learning_rate,
+            loss_func=loss_func, epochs=epochs, eval_freq=eval_freq,
+            verbose=verbose, opt=opt)
 
-    def count_params(self):
-        ps = sum(p.numel() for p in self.arch.parameters() if p.requires_grad)
-        return ps
-
-    def get_filter_coefs(self):
-        filter_coefs = []
-        for layer in self.arch.model:
-            if isinstance(layer, GFUps):
-                filter_coefs.append(layer.hs.detach().numpy())
-        return np.array(filter_coefs)
-
-    def fit(self, signal, x=None, reduce_err=True):
+    def fit(self, x_n, x=None, reduce_err=True):
+        """
         if x is not None:
             x = Tensor(x)
-        x_n = Tensor(Tensor(signal))
+        x_n = Tensor(signal)
+        """
 
         best_err = 1000000
         best_net = None
         best_epoch = 0
-        train_err = np.zeros((self.epochs, signal.size))
-        val_err = np.zeros((self.epochs, signal.size))
+        train_err = np.zeros((self.epochs, x.shape[0]))
+        val_err = np.zeros((self.epochs, x.shape[0]))
         for i in range(1, self.epochs+1):
             t_start = time.time()
             self.arch.zero_grad()
@@ -222,11 +223,11 @@ class ModelSamuel:
             if x is not None:
                 with no_grad():
                     eval_loss = self.loss(x_hat, x)
-                    val_err[i-1, :] = eval_loss.detach().numpy()
+                    val_err[i-1, :] = eval_loss.detach().to('cpu').numpy()
 
             loss_red.backward()
             self.optim.step()
-            train_err[i-1, :] = loss.detach().numpy()
+            train_err[i-1, :] = loss.detach().to('cpu').numpy()
             t = time.time()-t_start
 
             if self.verbose and i % self.eval_freq == 0:
@@ -243,8 +244,8 @@ class ModelSamuel:
 
     def test(self, x):
         x_hat = self.arch(self.arch.input).squeeze()
-        node_err = self.loss(x_hat, Tensor(x)).detach().numpy()
-        x_hat = x_hat.detach().numpy()
+        node_err = self.loss(x_hat, Tensor(x)).detach().to('cpu').numpy()
+        #x_hat = x_hat.detach().numpy()
         err = np.sum(node_err)/np.linalg.norm(x)**2
         return np.median(node_err), err 
    
