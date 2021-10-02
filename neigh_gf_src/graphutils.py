@@ -2,6 +2,9 @@ import numpy as np
 from pygsp.graphs import Graph, StochasticBlockModel, ErdosRenyi, BarabasiAlbert
 from scipy.sparse.csgraph import shortest_path
 
+import os
+import torch
+
 
 # Graph Type Constants
 SBM = 1
@@ -234,3 +237,54 @@ def create_filter(S, ps):
         H /= np.linalg.norm(H)
 
     return H
+
+
+class NeighborhoodGF:
+    """
+    This class allows to pre-calculate and store the neighborhood graph filters
+    associated with real-world datasets' graphs, as the high number of nodes
+    means a really high computation time of the eigenvalue decomposition and
+    shortest paths matrix.
+    """
+    def __init__(self, S, K_max, arch_name, device='cpu'):
+        self.S = S
+        self.N = self.S.shape[0]
+        self.K_max = K_max
+        self.arch_name = arch_name
+        self.device = device
+
+        if os.path.exists(arch_name + '.npy'):
+            self.distances = np.load(arch_name + '.npy')
+        else:
+            self.distances = shortest_path(self.S, unweighted=True, directed=False)
+            np.save(arch_name, self.distances)
+
+        self.calc_filters()
+
+    def calc_filters(self):
+        self.H = torch.zeros((self.K_max, self.N, self.N), device=self.device)
+        self.H[0,:,:] = torch.eye(self.N, device=self.device)
+        for k in range(1, self.K_max):
+            Hpow = torch.from_numpy((self.distances == k)).type(torch.float).to(self.device)
+            d = torch.real(torch.linalg.eigvals(Hpow))
+            dmax = torch.max(d)
+            self.H[k,:,:] = Hpow / dmax
+
+    def get_filter(self, hs):
+        k = hs.size()[0]
+        assert k <= self.K_max, "Too much filter coefficients"
+        H = torch.zeros((self.N, self.N), device=self.device)
+        for i in range(k):
+            H += hs[i] * self.H[i,:,:]
+
+        return H
+
+def calc_powers(S, K, device='cpu'):
+    N = S.shape[0]
+    St = torch.Tensor(S).to(device)
+    Spow = torch.zeros((K, N, N), device=device)
+    Spow[0,:,:] = torch.eye(N, device=device)
+
+    for k in range(1, K):
+        Spow[k,:,:] = Spow[k-1,:,:] @ St
+    return Spow
